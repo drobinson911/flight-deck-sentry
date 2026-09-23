@@ -1,0 +1,13 @@
+# build
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+.kotlin/
+
+# secrets (fleet token etc.) — see secrets.properties.example
+secrets.properties
+
+# OS
+.DS_Store
