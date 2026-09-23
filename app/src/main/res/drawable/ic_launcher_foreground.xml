@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- shield -->
+    <path android:fillColor="#F2F5F8"
+        android:pathData="M54,24 L78,32 L78,52 C78,68 67,79 54,85 C41,79 30,68 30,52 L30,32 Z" />
+    <path android:fillColor="#0E2A3A"
+        android:pathData="M54,28.5 L74,35.2 L74,52 C74,65.5 65,75 54,80.5 C43,75 34,65.5 34,52 L34,35.2 Z" />
+    <!-- radar rings -->
+    <path android:strokeColor="#3DDC84" android:strokeWidth="1.6" android:fillColor="#00000000"
+        android:pathData="M40,55 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0" />
+    <path android:strokeColor="#3DDC84" android:strokeWidth="1.4" android:fillColor="#00000000"
+        android:pathData="M47,55 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" />
+    <!-- sweep wedge -->
+    <path android:fillColor="#3DDC84" android:fillAlpha="0.55"
+        android:pathData="M54,55 L54,41 A14,14 0 0,1 66.1,48 Z" />
+    <path android:strokeColor="#3DDC84" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M54,55 L66.1,48" />
+    <!-- contact -->
+    <path android:fillColor="#FFC400"
+        android:pathData="M60.5,45 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+    <path android:fillColor="#F2F5F8"
+        android:pathData="M52.4,55 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0" />
+</vector>

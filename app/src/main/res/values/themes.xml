@@ -1,0 +1,43 @@
+<resources>
+    <style name="Theme.Sentry" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/advisory</item>
+        <item name="colorOnPrimary">@color/bg</item>
+        <item name="colorSecondary">@color/ok</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:textColorPrimary">@color/ink</item>
+        <item name="android:textColorSecondary">@color/dim</item>
+        <item name="android:textColor">@color/ink</item>
+    </style>
+
+    <style name="Sentry.Label" parent="">
+        <item name="android:textColor">@color/dim</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.06</item>
+    </style>
+    <style name="Sentry.Value" parent="">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textSize">20sp</item>
+    </style>
+    <style name="Sentry.Panel" parent="">
+        <item name="android:background">@drawable/panel_bg</item>
+        <item name="android:padding">12dp</item>
+    </style>
+    <style name="Sentry.Button" parent="Widget.MaterialComponents.Button">
+        <item name="android:textSize">18sp</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+    <style name="Sentry.Field" parent="">
+        <item name="android:textColor">@color/ink</item>
+        <item name="android:textColorHint">@color/dim</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:background">@drawable/field_bg</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:singleLine">true</item>
+    </style>
+</resources>

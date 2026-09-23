@@ -1,0 +1,13 @@
+<resources>
+    <color name="bg">#0B0F14</color>
+    <color name="panel">#151C24</color>
+    <color name="panel2">#1D2631</color>
+    <color name="ink">#F2F5F8</color>
+    <color name="dim">#9AA7B4</color>
+    <color name="ok">#3DDC84</color>
+    <color name="advisory">#4FC3F7</color>
+    <color name="caution">#FFC400</color>
+    <color name="warning">#FF3B30</color>
+    <color name="replay">#B388FF</color>
+    <color name="icon_bg">#0E2A3A</color>
+</resources>
