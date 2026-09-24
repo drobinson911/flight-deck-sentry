@@ -3,6 +3,9 @@ package com.uasflightdeck.sentry
 import android.util.Log
 import com.uasflightdeck.sentry.core.AlertEngine
 import com.uasflightdeck.sentry.core.AlertEvent
+import com.uasflightdeck.sentry.core.ControllerFix
+import com.uasflightdeck.sentry.core.Cylinder
+import com.uasflightdeck.sentry.core.SelectionMode
 import com.uasflightdeck.sentry.core.HealthMonitor
 import com.uasflightdeck.sentry.core.Ownship
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +41,17 @@ data class UiState(
     val replayClock: String? = null,
     val replayProgress: Float = 0f,
     val ringsNm: Triple<Double, Double, Double> = Triple(3.0, 1.0, 0.5),
+    // ── selection (callsign / serial / controller) ──
+    val selectionMode: SelectionMode? = null,
+    val selectionNote: String = "",
+    val pattern: String = "",
+    val matchCount: Int = 0,
+    val controllerFix: ControllerFix? = null,
+    /** Fix age at [tickMs] (sim time in a replay). */
+    val controllerFixAgeSec: Double? = null,
+    val controllerUsable: Boolean = false,
+    /** Enabled cylinders, drawn on the radar and listed when protecting the controller. */
+    val cylinders: List<Cylinder> = emptyList(),
 )
 
 object SentryBus {

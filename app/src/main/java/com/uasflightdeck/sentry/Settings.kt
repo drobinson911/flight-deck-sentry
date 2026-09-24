@@ -2,10 +2,10 @@ package com.uasflightdeck.sentry
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.uasflightdeck.sentry.core.Cylinder
+import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SentryConfig
-
-/** Manual/fallback ownship modes. */
-enum class ManualMode { OFF, PINNED, DEVICE_GPS }
+import com.uasflightdeck.sentry.core.SerialList
 
 /**
  * All user settings, in plain SharedPreferences (small, synchronous, survives
@@ -20,7 +20,14 @@ class Settings(ctx: Context) {
         get() = p.getString("fleetToken", null)?.takeIf { it.isNotBlank() } ?: BuildConfig.FLEET_TOKEN
         set(v) = p.edit().putString("fleetToken", v.trim()).apply()
     val fleetTokenIsDefault get() = p.getString("fleetToken", null).isNullOrBlank() && BuildConfig.FLEET_TOKEN.isNotBlank()
-    var droneFilter by str("droneFilter", "")
+    /** Pre-0.2 substring filter; migrated into [callsignPattern] as `*filter*`. */
+    private var droneFilter by str("droneFilter", "")
+    var callsignPattern: String
+        get() = p.getString("callsignPattern", null) ?: droneFilter.takeIf { it.isNotBlank() }?.let { "*$it*" } ?: ""
+        set(v) = p.edit().putString("callsignPattern", v.trim()).apply()
+    var serials by str("serials", "")
+    /** User chose "Protect this controller": ignore drones entirely. */
+    var protectController by bool("protectController", false)
     var workerBase by str("workerBase", "https://uas-app.drobinson911.workers.dev")
 
     // traffic
@@ -43,14 +50,15 @@ class Settings(ctx: Context) {
     var voiceOn by bool("voiceOn", true)
     var volume by dbl("volume", 1.0)
 
-    // manual ownship
-    var manualMode: ManualMode
-        get() = runCatching { ManualMode.valueOf(p.getString("manualMode", "OFF")!!) }.getOrDefault(ManualMode.OFF)
-        set(v) = p.edit().putString("manualMode", v.name).apply()
-    var manualLat by dbl("manualLat", Double.NaN)
-    var manualLon by dbl("manualLon", Double.NaN)
-    var manualAltMslFt by dbl("manualAltMslFt", Double.NaN)
-    var gpsAglFt by dbl("gpsAglFt", 400.0)
+    // controller protection (fallback when no drone is selected)
+    var cylinders: List<Cylinder>
+        get() = p.getString("cylinders", null)?.let { Cylinder.fromJson(it) } ?: Cylinder.DEFAULTS
+        set(v) = p.edit().putString("cylinders", Cylinder.toJson(v)).apply()
+    /** Controller elevation override, ft MSL (NaN = use GPS). */
+    var controllerElevFt by dbl("controllerElevFt", Double.NaN)
+
+    // callsign / serial history for autocomplete
+    var knownDronesJson by str("knownDrones", "")
 
     // geofences
     var circleEnabled by bool("circleEnabled", false)
@@ -66,6 +74,10 @@ class Settings(ctx: Context) {
     var replaySpeed by dbl("replaySpeed", 1.0)
     var replayCloudView by bool("replayCloudView", false)
     var batteryPrompted by bool("batteryPrompted", false)
+
+    fun selectorConfig() = DroneSelector.SelectorConfig(
+        pattern = callsignPattern, serials = SerialList.parse(serials), forceController = protectController,
+    )
 
     fun engineConfig(): SentryConfig {
         val c = SentryConfig(

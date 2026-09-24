@@ -27,6 +27,7 @@ import com.uasflightdeck.sentry.core.Geo
 import com.uasflightdeck.sentry.core.HealthMonitor
 import com.uasflightdeck.sentry.core.OwnshipSource
 import com.uasflightdeck.sentry.core.Phrasing
+import com.uasflightdeck.sentry.core.SelectionMode
 import com.uasflightdeck.sentry.core.Severity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -45,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settings: Settings
     private lateinit var banner: TextView
     private lateinit var drone: TextView
+    private lateinit var droneLabel: TextView
     private lateinit var droneDetail: TextView
     private lateinit var sources: TextView
     private lateinit var targets: TextView
@@ -60,7 +62,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         settings = Settings(this)
-        banner = findViewById(R.id.banner); drone = findViewById(R.id.drone); droneDetail = findViewById(R.id.droneDetail)
+        banner = findViewById(R.id.banner); drone = findViewById(R.id.drone); droneLabel = findViewById(R.id.droneLabel); droneDetail = findViewById(R.id.droneDetail)
         sources = findViewById(R.id.sources); targets = findViewById(R.id.targets); targetsLabel = findViewById(R.id.targetsLabel)
         callouts = findViewById(R.id.callouts); logView = findViewById(R.id.log); zones = findViewById(R.id.zones)
         radar = findViewById(R.id.radar); btnArm = findViewById(R.id.btnArm); progress = findViewById(R.id.replayProgress)
@@ -71,6 +73,7 @@ class MainActivity : AppCompatActivity() {
             else { askPermissionsOnce(); SentryService.send(this, SentryService.ACTION_ARM); maybeAskBatteryExemption() }
         }
         findViewById<View>(R.id.btnTest).setOnClickListener { SentryService.send(this, SentryService.ACTION_TEST) }
+        findViewById<View>(R.id.btnPick).setOnClickListener { DronePicker.show(this, settings) }
         findViewById<View>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
         lifecycleScope.launch {
@@ -104,16 +107,17 @@ class MainActivity : AppCompatActivity() {
                 it.putExtra(SentryService.EXTRA_CLOUD_VIEW, i.getBooleanExtra("cloud_view", false))
             }
             "test" -> SentryService.send(this, SentryService.ACTION_TEST)
-            // manual-position fallback for demos: --ef lat .. --ef lon .. --ef alt ..  (no lat = turn it off)
-            "pin" -> if (i.hasExtra("lat")) {
-                settings.manualLat = i.getFloatExtra("lat", 0f).toDouble(); settings.manualLon = i.getFloatExtra("lon", 0f).toDouble()
-                settings.manualAltMslFt = i.getFloatExtra("alt", Float.NaN).toDouble(); settings.manualMode = ManualMode.PINNED
-            } else settings.manualMode = ManualMode.OFF
-            // --es station_url http://10.0.2.2:18080 --ez station true --es filter DEMO-1
+            // --es station_url http://10.0.2.2:18080 --ez station true --es pattern "DEMO-# Pilot"
+            // --es serials "A,B" --ez protect_controller true --es worker http://10.0.2.2:18081
+            // --ef elev 5100 (controller elevation override; NaN clears it)
             "set" -> {
                 i.getStringExtra("station_url")?.let { settings.stationUrl = it }
                 if (i.hasExtra("station")) settings.stationEnabled = i.getBooleanExtra("station", false)
-                i.getStringExtra("filter")?.let { settings.droneFilter = it }
+                i.getStringExtra("pattern")?.let { settings.callsignPattern = it }
+                i.getStringExtra("serials")?.let { settings.serials = it }
+                if (i.hasExtra("protect_controller")) settings.protectController = i.getBooleanExtra("protect_controller", false)
+                i.getStringExtra("worker")?.let { settings.workerBase = it }
+                if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
             }
         }
         i.removeExtra("sentry_action")
@@ -153,12 +157,14 @@ class MainActivity : AppCompatActivity() {
             st.mode == Mode.REPLAY && top != null && top.severity >= Severity.ADVISORY ->
                 "REPLAY ${st.replayClock} · ${top.severity.label.uppercase()} ${top.displayId}" to sevColRes(top.severity)
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock}" to R.color.replay
+            st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "NO DRONE · CONTROLLER GPS UNAVAILABLE" to R.color.warning
             st.ownship == null -> "NO DRONE POSITION" to R.color.warning
             !st.ownshipFresh -> "DRONE POSITION LOST · ${age(st.ownshipAgeSec)} old" to R.color.warning
             top != null && top.severity >= Severity.ADVISORY ->
                 "${top.severity.label.uppercase()} · ${top.displayId} ${Geo.cardinalAbbrev(top.bearingDeg)} ${Phrasing.displayDistance(top.distNm)}" to sevColRes(top.severity)
             st.trafficStale -> "TRAFFIC DATA STALE" to R.color.caution
-            st.ownship.isManual -> "ARMED · MANUAL POSITION" to R.color.caution
+            st.selectionMode == SelectionMode.CONTROLLER && st.cylinders.isEmpty() -> "NO DRONE · NO CYLINDER ENABLED" to R.color.caution
+            st.selectionMode == SelectionMode.CONTROLLER -> "ARMED · PROTECTING CONTROLLER" to R.color.ok
             else -> "ARMED · WATCHING ${st.ownship.name}" to R.color.ok
         }
         banner.text = text
@@ -175,7 +181,25 @@ class MainActivity : AppCompatActivity() {
 
         // ── drone ──
         val o = st.ownship
-        if (o == null) {
+        val controllerMode = st.selectionMode == SelectionMode.CONTROLLER
+        droneLabel.text = when (st.selectionMode) {
+            SelectionMode.CALLSIGN -> "Protecting · drone by callsign"
+            SelectionMode.SERIAL -> "Protecting · drone by serial"
+            SelectionMode.CONTROLLER -> "Protecting · this controller (no drone selected)"
+            null -> "Protecting"
+        }
+        if (controllerMode && st.mode != Mode.OFF) {
+            val sb = SpannableStringBuilder().add("This controller", bold = true)
+            sb.add("  ${if (st.controllerUsable) "GPS OK" else "NO GPS FIX"}", col(if (st.controllerUsable) R.color.ok else R.color.warning), true)
+            drone.text = sb
+            val f = st.controllerFix
+            val pos = if (f == null) "no fix yet" else "%.5f, %.5f · %s".format(Locale.US, f.lat, f.lon,
+                f.elevMslFt?.let { "%,d ft".format(Locale.US, it.toInt()) } ?: "elev unknown")
+            val why = if (settings.protectController) "chosen in Drone…" else st.ownshipNote.ifEmpty {
+                if (st.pattern.isBlank()) "no callsign pattern set" else "\"${st.pattern}\" matches nothing airborne" }
+            val cyl = if (st.cylinders.isEmpty()) "No cylinder enabled: nothing protected (Settings)" else st.cylinders.joinToString("\n") { "◯ " + it.describe() }
+            droneDetail.text = "$why\n$pos\n$cyl"
+        } else if (o == null) {
             drone.text = if (st.mode == Mode.OFF) "—" else "No drone"
             droneDetail.text = st.ownshipNote.ifEmpty { if (st.mode == Mode.OFF) "Arm to start watching" else "" }
         } else {
@@ -184,8 +208,12 @@ class MainActivity : AppCompatActivity() {
             if (!st.ownshipFresh) sb.add("  LOST", col(R.color.warning), true)
             drone.text = sb
             val alt = listOfNotNull(o.altMslFt?.let { "%,d ft MSL".format(Locale.US, it.toInt()) }, o.altAglFt?.let { "%,d AGL".format(Locale.US, it.toInt()) }).joinToString(" · ")
-            val manual = if (o.source == OwnshipSource.MANUAL_PINNED || o.source == OwnshipSource.DEVICE_GPS) "USING MANUAL POSITION · " else ""
-            droneDetail.text = "$manual${o.source.label} · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
+            val how = when (st.selectionMode) {
+                SelectionMode.SERIAL -> "serial ${o.serial ?: "?"} · "
+                SelectionMode.CALLSIGN -> "pattern \"${st.pattern}\" · "
+                else -> ""
+            }
+            droneDetail.text = "$how${o.source.label} · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
                 (if (st.ownshipNote.isNotEmpty()) "\n${st.ownshipNote}" else "")
         }
 
@@ -202,6 +230,29 @@ class MainActivity : AppCompatActivity() {
             sb.add(r.name.padEnd(14).take(14), col(R.color.ink)).add(label, col(c), true)
                 .add(age(r.ageSec).padEnd(6), col(R.color.ink)).add(" ${r.detail.take(20)}\n", col(R.color.dim))
         }
+        if (st.mode != Mode.OFF && st.selectionMode != null) {
+            val (lbl, c) = when (st.selectionMode) {
+                SelectionMode.CALLSIGN -> "CALLSIGN " to R.color.ok
+                SelectionMode.SERIAL -> "SERIAL   " to R.color.ok
+                SelectionMode.CONTROLLER -> "CONTROL  " to R.color.caution
+            }
+            val det = when (st.selectionMode) {
+                SelectionMode.CONTROLLER -> "${st.cylinders.size} cylinder${if (st.cylinders.size == 1) "" else "s"}"
+                else -> "${st.matchCount} match${if (st.matchCount == 1) "" else "es"}"
+            }
+            sb.add("Selection".padEnd(14), col(R.color.ink)).add(lbl, col(c), true).add(" $det\n", col(R.color.dim))
+            // Controller GPS health, derived at render time from the fix itself
+            val f = st.controllerFix
+            val fixAge = st.controllerFixAgeSec?.let { it + if (st.mode == Mode.LIVE) (now - st.tickMs) / 1000.0 else 0.0 }
+            val (gl, gc) = when {
+                f == null -> "NO FIX " to R.color.warning
+                st.controllerUsable -> "OK     " to R.color.ok
+                else -> "OLD    " to R.color.warning
+            }
+            val acc = f?.accuracyM?.let { " ±${it.toInt()} m" } ?: ""
+            sb.add("Ctrl GPS".padEnd(14), col(R.color.ink)).add(gl, col(gc), true).add(age(fixAge).padEnd(6), col(R.color.ink))
+                .add("$acc ${f?.label?.removePrefix("controller GPS")?.removePrefix(" · ") ?: ""}".take(17) + "\n", col(R.color.dim))
+        }
         if (st.mode == Mode.OFF) {
             sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).add("starts when armed", col(R.color.dim))
             sb.add("\n\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
@@ -214,7 +265,7 @@ class MainActivity : AppCompatActivity() {
         // ── targets ──
         targetsLabel.text = if (st.mode == Mode.OFF) "Targets" else "Targets · ${st.targets.size} within ${settings.trafficRadiusNm.toInt()} nm"
         val tb = SpannableStringBuilder()
-        if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) "No ownship: proximity not computed" else "No traffic", col(R.color.dim))
+        if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) (if (controllerMode) "No controller GPS: nothing computed" else "No ownship: proximity not computed") else "No traffic", col(R.color.dim))
         for (t in st.targets.take(9)) {
             val c = if (t.severity >= Severity.ADVISORY) sevCol(t.severity) else col(R.color.ink)
             val v = t.dvFt?.let { (if (t.altEstimated) "≈" else "") + (if (it >= 0) "+" else "-") +
@@ -236,6 +287,7 @@ class MainActivity : AppCompatActivity() {
         targets.text = tb
 
         radar.rings = st.ringsNm
+        radar.cylinderRadii = if (controllerMode) st.cylinders.map { it.radiusNm } else emptyList()
         radar.targets = if (st.ownshipFresh) st.targets else emptyList()
         radar.active = st.mode != Mode.OFF && st.ownshipFresh
         zones.text = if (st.mode == Mode.OFF) "" else if (st.watchedZones.isEmpty()) "No TFR / geofence within ${settings.tfrRelevanceNm.toInt()} nm"
@@ -256,10 +308,15 @@ class MainActivity : AppCompatActivity() {
         callouts.text = sb
     }
 
+    /** Notifications, and location: the controller's GPS is the fallback protected position. */
     private fun askPermissionsOnce() {
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        val want = ArrayList<String>()
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            want += Manifest.permission.POST_NOTIFICATIONS
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            want += Manifest.permission.ACCESS_FINE_LOCATION; want += Manifest.permission.ACCESS_COARSE_LOCATION
         }
+        if (want.isNotEmpty()) requestPermissions(want.toTypedArray(), 1)
     }
 
     @SuppressLint("BatteryLife")

@@ -18,6 +18,9 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.uasflightdeck.sentry.core.AlertEngine
 import com.uasflightdeck.sentry.core.AlertEvent
+import com.uasflightdeck.sentry.core.ControllerFix
+import com.uasflightdeck.sentry.core.DroneSelector
+import com.uasflightdeck.sentry.core.SelectionMode
 import com.uasflightdeck.sentry.core.EventKind
 import com.uasflightdeck.sentry.core.DemoReplayFixture
 import com.uasflightdeck.sentry.core.Geo
@@ -51,8 +54,9 @@ import java.util.concurrent.ConcurrentHashMap
  * wake lock so it keeps watching with the screen off and DroneSense in front.
  *
  * Redundancy, stacked (never either/or):
- *  - ownship: fleet our-drones (Flight Deck Air) AND fleet DroneSense snapshot;
- *    manual pin / controller GPS as automatic fallback when both go stale.
+ *  - ownship: fleet our-drones (Flight Deck Air) AND fleet DroneSense snapshot,
+ *    chosen by callsign pattern, then serial allowlist (DroneSelector); with no
+ *    drone selected, cylinders around THIS controller's GPS are protected.
  *  - traffic: truck station (Overwatch, LAN) AND cloud ADS-B AND the drone's
  *    AirSense contacts (when Flight Deck Air relays them), merged per hex.
  *  - station address: typed URL AND Overwatch UDP beacon discovery.
@@ -82,7 +86,8 @@ class SentryService : Service() {
     private val http = Http()
     private lateinit var voice: AlertVoice
     private val health = HealthMonitor()
-    private var engine = AlertEngine()
+    private var engine = AlertEngine(externalSelection = true)
+    private var selector = DroneSelector()
     @Volatile private var mode = Mode.OFF
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -165,7 +170,8 @@ class SentryService : Service() {
         if (mode == Mode.LIVE) return
         if (mode == Mode.REPLAY) { settings.armed = true; return }  // replay returns to live when it ends
         mode = Mode.LIVE
-        engine = AlertEngine(settings.engineConfig())
+        engine = AlertEngine(settings.engineConfig(), externalSelection = true)
+        selector = DroneSelector(settings.selectorConfig())
         armedAtMs = System.currentTimeMillis()
         health.setEnabled("fleet", true, armedAtMs)
         health.setEnabled("tfr", true, armedAtMs)
@@ -283,10 +289,12 @@ class SentryService : Service() {
             val now = System.currentTimeMillis()
             val p = Parsers.parseOurDrones(http.get(base() + "/api/live/our-drones", hdr), now)
             fdaDrones = p.drones; airsense = p.airsense; ok++
+            DroneHistory.observeLive(this, p.drones + dsDrones, now)
         } catch (e: Exception) { err = "our-drones: ${e.message}" }
         try {
             val now = System.currentTimeMillis()
             dsDrones = Parsers.parseDroneSense(http.get(base() + "/api/live/dronesense", hdr), now); ok++
+            DroneHistory.observeLive(this, fdaDrones + dsDrones, now)
         } catch (e: Exception) { err = (err?.let { "$it; " } ?: "") + "dronesense: ${e.message}" }
         if (ok == 0) throw java.io.IOException(err)
         val n = fdaDrones.size + dsDrones.size
@@ -364,23 +372,50 @@ class SentryService : Service() {
 
     private fun liveTick(now: Long) {
         syncSettings()
-        val (own, note) = selectOwnship(now)
+        selector.config = settings.selectorConfig()
+        val sel = selector.step(now, fdaDrones + dsDrones, controllerFix())
+        val own = sel.ownship
         if (own != null) lastOwnPos = own.pos
         val center = own?.pos ?: lastOwnPos
         val merged = TrafficMerger.merge(stationTargets, cloudTargets, airsense)
         val traffic = if (center != null) TrafficMerger.within(merged, center, settings.trafficRadiusNm) else emptyList()
-        val zones = tfrZones + loadFileZones() + circleZone(own)
+        val zones = tfrZones + loadFileZones() + circleZone(own) + cylinderZones(sel)
         val res = engine.step(now, own, traffic, zones, trafficAgeSec(now))
         val hEvents = health.step(now)
-        (res.events + hEvents).forEach { dispatch(it, "live") }
-        publish(now, own, note, res, traffic.size, null)
+        (sel.events + res.events + hEvents).forEach { dispatch(it, "live") }
+        publish(now, own, sel, res, traffic.size, null)
+    }
+
+    /** Controller cylinders, only while protecting the controller (a watched drone uses its own rings). */
+    private fun cylinderZones(sel: DroneSelector.Result): List<Zone> {
+        if (sel.mode != SelectionMode.CONTROLLER) return emptyList()
+        val c = sel.ownship?.pos ?: return emptyList()
+        return settings.cylinders.filter { it.enabled && it.valid() }.map { it.toZone(c) }
+    }
+
+    /**
+     * This controller's position. Elevation: the Settings override if set;
+     * else Android's MSL altitude (API 34+ when the platform provides it);
+     * else the raw GPS altitude, which is WGS-84 ELLIPSOID height (about
+     * 100 ft below MSL in California) and is labelled as such.
+     */
+    private fun controllerFix(): ControllerFix? {
+        val l = gpsFix ?: return null
+        val override = settings.controllerElevFt.takeIf { it.isFinite() }
+        val (elev, label) = when {
+            override != null -> override to "controller GPS · elev set"
+            Build.VERSION.SDK_INT >= 34 && l.hasMslAltitude() -> l.mslAltitudeMeters / 0.3048 to "controller GPS · MSL"
+            l.hasAltitude() -> l.altitude / 0.3048 to "controller GPS · elev ≈ellipsoid"
+            else -> null to "controller GPS · elev unknown"
+        }
+        return ControllerFix(l.latitude, l.longitude, elev, if (l.hasAccuracy()) l.accuracy.toDouble() else null, l.time, label)
     }
 
     private fun syncSettings() {
         engine.config = settings.engineConfig()
         voice.enabled = settings.voiceOn
         voice.volume = settings.volume.toFloat()
-        if (settings.manualMode == ManualMode.DEVICE_GPS) startGps() else stopGps()
+        startGps()   // always: the controller is the fallback protected position
     }
 
     private fun trafficAgeSec(now: Long): Double {
@@ -389,41 +424,6 @@ class SentryService : Service() {
             if (settings.cloudEnabled) health.ageSec("cloud", now) else null,
         )
         return ages.minOrNull() ?: ((now - armedAtMs) / 1000.0)
-    }
-
-    /** Fleet feed first (freshest matching drone); manual only when the feed has nothing fresh. */
-    private fun selectOwnship(now: Long): Pair<Ownship?, String> {
-        val filter = settings.droneFilter.trim().lowercase()
-        val all = fdaDrones + dsDrones
-        val matched = if (filter.isEmpty()) all else all.filter { it.name.lowercase().contains(filter) || it.id.lowercase().contains(filter) }
-        val best = matched.maxByOrNull { it.posTimeMs }
-        val distinctNames = matched.map { it.name }.distinct()
-        var note = when {
-            all.isEmpty() -> "no drone airborne in fleet feed"
-            filter.isNotEmpty() && matched.isEmpty() -> "no drone matches \"${settings.droneFilter}\" (${all.size} airborne)"
-            filter.isEmpty() && distinctNames.size > 1 -> "auto-selected freshest of ${distinctNames.size}: set a callsign in Settings"
-            else -> ""
-        }
-        val fresh = best != null && now - best.posTimeMs <= 15_000
-        if (!fresh) {
-            manualOwnship(now)?.let { return it to note }
-        }
-        return best to note
-    }
-
-    private fun manualOwnship(now: Long): Ownship? = when (settings.manualMode) {
-        ManualMode.OFF -> null
-        ManualMode.PINNED -> {
-            val la = settings.manualLat; val lo = settings.manualLon
-            if (la.isFinite() && lo.isFinite()) Ownship("manual", "manual pin", la, lo,
-                settings.manualAltMslFt.takeIf { it.isFinite() }, null, now, OwnshipSource.MANUAL_PINNED) else null
-        }
-        ManualMode.DEVICE_GPS -> gpsFix?.let { l ->
-            // Location.altitude is WGS84 ellipsoid height (~100 ft off MSL in CA): labelled GPS/estimated.
-            Ownship("gps", "controller GPS", l.latitude, l.longitude,
-                if (l.hasAltitude()) l.altitude / 0.3048 + settings.gpsAglFt else null, null,
-                l.time, OwnshipSource.DEVICE_GPS)
-        }
     }
 
     private fun loadFileZones(): List<Zone> {
@@ -458,7 +458,8 @@ class SentryService : Service() {
         } catch (e: Exception) { SentryBus.log("Replay load failed: $e"); return }
         mode = Mode.REPLAY
         val sp = speed.coerceIn(0.25, 16.0)
-        val eng = AlertEngine(settings.engineConfig())
+        val eng = AlertEngine(settings.engineConfig(), externalSelection = true)
+        val sel = DroneSelector(settings.selectorConfig())
         SentryBus.log("REPLAY start: ${sc.title} at ${sp}x")
         voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, "Replay starting"))
         if (tickJob == null) startTickLoop()
@@ -469,11 +470,17 @@ class SentryService : Service() {
                 tickHeartbeat = t0
                 syncSettings()
                 eng.config = settings.engineConfig()
-                val own = sc.ownshipAt(t)
+                sel.config = settings.selectorConfig()
+                // The replay's "fleet feed" is DEMO-1 (callsign "DEMO-1 Pilot"); the
+                // simulated controller sits at DEMO-1's launch point.
+                val drones = sc.dronesAt(t)
+                DroneHistory.observeSession(drones, System.currentTimeMillis())
+                val s = sel.step(t, drones, DemoReplayFixture.launchController(t))
+                val own = s.ownship
                 val traffic = sc.trafficAt(t)
-                val res = eng.step(t, own, traffic, sc.zones, 0.0)
-                res.events.forEach { dispatch(it, "replay", sc) }
-                publish(t, own, "", res, traffic.size, sc)
+                val res = eng.step(t, own, traffic, sc.zones + cylinderZones(s), 0.0)
+                (s.events + res.events).forEach { dispatch(it, "replay", sc) }
+                publish(t, own, s, res, traffic.size, sc)
                 t += 1000
                 delay(maxOf(10L, (1000.0 / sp).toLong() - (System.currentTimeMillis() - t0)))
             }
@@ -506,7 +513,7 @@ class SentryService : Service() {
         return f.format(Date(t + sc.clockOffsetMs)) + " " + sc.clockZoneLabel
     }
 
-    private fun publish(now: Long, own: Ownship?, note: String, res: AlertEngine.StepResult, nTraffic: Int, sc: ReplayScenario?) {
+    private fun publish(now: Long, own: Ownship?, sel: DroneSelector.Result, res: AlertEngine.StepResult, nTraffic: Int, sc: ReplayScenario?) {
         val wall = System.currentTimeMillis()
         val rows = health.all().map { SourceRow(it.spoken.replace("T F R", "TFR"), health.stateOf(it, wall), health.ageSec(it.key, wall),
             if (health.stateOf(it, wall) == HealthMonitor.State.OK) it.detail else (it.lastError ?: it.detail)) }
@@ -517,7 +524,7 @@ class SentryService : Service() {
             ownship = own,
             ownshipFresh = res.ownshipFresh,
             ownshipAgeSec = res.ownshipAgeSec,
-            ownshipNote = note,
+            ownshipNote = sel.note,
             sources = rows,
             targets = res.targets,
             targetsInRadius = nTraffic,
@@ -529,6 +536,14 @@ class SentryService : Service() {
             replayClock = sc?.let { replayClock(now, it) },
             replayProgress = sc?.let { ((now - it.startMs).toFloat() / (it.endMs - it.startMs)).coerceIn(0f, 1f) } ?: 0f,
             ringsNm = Triple(cfg.advisoryNm, cfg.cautionNm, cfg.warningNm),
+            selectionMode = sel.mode,
+            selectionNote = sel.note,
+            pattern = settings.callsignPattern,
+            matchCount = sel.matchCount,
+            controllerFix = sel.controllerFix,
+            controllerFixAgeSec = sel.controllerFixAgeSec,
+            controllerUsable = sel.controllerUsable,
+            cylinders = settings.cylinders.filter { it.enabled && it.valid() },
         )
         SentryBus.publish(st)
         updateNotification(st)
@@ -542,9 +557,10 @@ class SentryService : Service() {
         st ?: return "Starting…"
         val who = when {
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock ?: ""}"
+            st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "No drone · controller GPS unavailable"
+            st.selectionMode == SelectionMode.CONTROLLER -> "Protecting this controller"
             st.ownship == null -> "No drone position"
             !st.ownshipFresh -> "Drone position LOST (${st.ownship.name})"
-            st.ownship.source == OwnshipSource.MANUAL_PINNED || st.ownship.source == OwnshipSource.DEVICE_GPS -> "Watching ${st.ownship.name} (manual)"
             else -> "Watching ${st.ownship.name}"
         }
         val srcs = st.sources.filter { it.state == HealthMonitor.State.OK && (it.name.startsWith("Station") || it.name.startsWith("Cloud")) }
@@ -561,19 +577,30 @@ class SentryService : Service() {
     }
 
     // ── GPS fallback ────────────────────────────────────────────────────────
-    private val gpsListener = LocationListener { l -> gpsFix = l }
+    /** Keep the freshest fix across providers (a coarse network fix never replaces a newer GPS one). */
+    private val gpsListener = LocationListener { l -> val cur = gpsFix; if (cur == null || l.time >= cur.time) gpsFix = l }
+    @Volatile private var gpsStarting = false
 
     @SuppressLint("MissingPermission")
     private fun startGps() {
-        if (gpsListening) return
+        if (gpsListening || gpsStarting) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return
         val lm = getSystemService(LocationManager::class.java) ?: return
+        gpsStarting = true
         scope.launch(Dispatchers.Main) {
             runCatching {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, gpsListener, Looper.getMainLooper())
+                // Stacked: GPS AND network provider; the freshest fix wins. Seed with the last known fix
+                // (its true age is shown and it is only used while <= 60 s old).
+                for (prov in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+                    if (lm.allProviders.contains(prov)) {
+                        lm.getLastKnownLocation(prov)?.let { gpsListener.onLocationChanged(it) }
+                        lm.requestLocationUpdates(prov, 1000L, 0f, gpsListener, Looper.getMainLooper())
+                    }
+                }
                 gpsListening = true
                 SentryBus.log("Controller GPS listening")
             }.onFailure { SentryBus.log("GPS start failed: ${it.message}") }
+            gpsStarting = false
         }
     }
 

@@ -42,7 +42,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:orientation="vertical">
-            <TextView style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Drone (ownship)" />
+            <TextView android:id="@+id/droneLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Protecting" />
             <TextView android:id="@+id/drone" style="@style/Sentry.Value" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="24sp" android:textStyle="bold" />
             <TextView android:id="@+id/droneDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/dim" android:textSize="16sp" />
         </LinearLayout>
@@ -68,18 +68,29 @@
                 style="@style/Sentry.Button"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
-                android:layout_weight="1.1"
-                android:textSize="24sp" />
+                android:layout_weight="1.05"
+                android:textSize="20sp" />
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnTest"
                 style="@style/Sentry.Button"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_marginStart="8dp"
-                android:layout_weight="1"
+                android:layout_weight="0.8"
                 android:backgroundTint="@color/panel2"
-                android:text="Test callout"
-                android:textSize="17sp"
+                android:text="Test"
+                android:textSize="16sp"
+                android:textColor="@color/ink" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPick"
+                style="@style/Sentry.Button"
+                android:layout_width="0dp"
+                android:layout_height="76dp"
+                android:layout_marginStart="8dp"
+                android:layout_weight="0.9"
+                android:backgroundTint="@color/panel2"
+                android:text="Drone…"
+                android:textSize="16sp"
                 android:textColor="@color/ink" />
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSettings"
@@ -87,10 +98,10 @@
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_marginStart="8dp"
-                android:layout_weight="0.85"
+                android:layout_weight="1.05"
                 android:backgroundTint="@color/panel2"
                 android:text="Settings"
-                android:textSize="17sp"
+                android:textSize="16sp"
                 android:textColor="@color/ink" />
         </LinearLayout>
     </LinearLayout>

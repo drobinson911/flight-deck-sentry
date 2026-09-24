@@ -13,8 +13,11 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.MultiAutoCompleteTextView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -27,7 +30,16 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
+import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
+import com.uasflightdeck.sentry.core.CallsignPattern
+import com.uasflightdeck.sentry.core.Cylinder
+import com.uasflightdeck.sentry.core.CylinderAltRef
 import com.uasflightdeck.sentry.core.Parsers
+import com.uasflightdeck.sentry.core.Units
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -41,9 +53,15 @@ class SettingsActivity : AppCompatActivity() {
     private val savers = ArrayList<() -> Unit>()
     private lateinit var geofenceStatus: TextView
     private lateinit var batteryStatus: TextView
+    private lateinit var patternField: AutoCompleteTextView
+    private lateinit var serialField: MultiAutoCompleteTextView
+    private lateinit var patternPreview: TextView
+    private lateinit var protectSwitch: SwitchCompat
+    private lateinit var cylinderList: LinearLayout
+    private lateinit var locStatus: TextView
 
     private val pickGeo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { importGeofence(it) } }
-    private val askLoc = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val askLoc = registerForActivityResult(ActivityResultContracts.RequestPermission()) { if (::locStatus.isInitialized) locStatus.text = locText() }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
     private fun col(id: Int) = ContextCompat.getColor(this, id)
@@ -93,6 +111,31 @@ class SettingsActivity : AppCompatActivity() {
             ))
         }
 
+        section(left, "Drone selection").apply {
+            addView(label("My callsign pattern"))
+            patternField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.callsignPattern); hint = "e.g. DEMO-# Pilot" }
+            addView(patternField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+            patternPreview = note(""); addView(patternPreview)
+            addView(note("# = any digit · * = anything · spaces and hyphens are optional · start with re: for a regex. Suggestions are callsigns Sentry has seen."))
+            addView(label("My aircraft serials (comma or newline separated)"))
+            serialField = MultiAutoCompleteTextView(this@SettingsActivity).apply {
+                styleField(this); setText(s.serials); hint = "used when no callsign matches"; setTokenizer(MultiAutoCompleteTextView.CommaTokenizer())
+            }
+            addView(serialField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+            protectSwitch = switch("Protect this controller (ignore drones)", s.protectController)
+            addView(row(button("Pick a drone…", secondary = true) {
+                saveAll(); DronePicker.show(this@SettingsActivity, s) { patternField.setText(s.callsignPattern); protectSwitch.isChecked = s.protectController; updatePreview() }
+            }))
+            patternField.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) = updatePreview()
+            })
+            savers += { s.callsignPattern = patternField.text.toString(); s.serials = serialField.text.toString(); s.protectController = protectSwitch.isChecked }
+            refreshSuggestions()
+            updatePreview()
+        }
+
         section(left, "Fleet feed (drone position)").apply {
             val token = field("Fleet token (X-Fleet-Token)", if (s.fleetTokenIsDefault) "" else s.fleetToken,
                 hint = if (s.fleetTokenIsDefault) "using token built into this APK" else "paste token", password = true)
@@ -101,9 +144,8 @@ class SettingsActivity : AppCompatActivity() {
                 val t = cm.primaryClip?.getItemAt(0)?.coerceToText(this@SettingsActivity)?.toString()?.trim()
                 if (t.isNullOrEmpty()) toast("Clipboard is empty") else { token.setText(t); toast("Token pasted — tap Save") }
             })
-            val filter = field("Drone callsign / id (blank = auto)", s.droneFilter, hint = "e.g. DEMO-1")
             val base = field("Worker base URL", s.workerBase)
-            savers += { if (token.text.isNotBlank() || !s.fleetTokenIsDefault) s.fleetToken = token.text.toString(); s.droneFilter = filter.text.toString(); s.workerBase = base.text.toString() }
+            savers += { if (token.text.isNotBlank() || !s.fleetTokenIsDefault) s.fleetToken = token.text.toString(); s.workerBase = base.text.toString() }
         }
 
         section(left, "Traffic sources (all run together)").apply {
@@ -143,23 +185,16 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        section(right, "Manual position (fallback when the feed is down)").apply {
-            addView(note("Used ONLY when the fleet feed has no fresh position. Sentry says \"using manual position\" when it switches."))
-            val g = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL }
-            g.addView(radio("Off", 201)); g.addView(radio("Pinned", 202)); g.addView(radio("This controller's GPS", 203))
-            g.check(when (s.manualMode) { ManualMode.OFF -> 201; ManualMode.PINNED -> 202; ManualMode.DEVICE_GPS -> 203 })
-            addView(g)
-            val lat = num("Latitude", s.manualLat, signed = true)
-            val lon = num("Longitude", s.manualLon, signed = true)
-            val alt = num("Drone altitude MSL (ft)", s.manualAltMslFt)
-            val agl = num("GPS mode: drone height above controller (ft)", s.gpsAglFt)
-            savers += {
-                s.manualMode = when (g.checkedRadioButtonId) { 202 -> ManualMode.PINNED; 203 -> ManualMode.DEVICE_GPS; else -> ManualMode.OFF }
-                s.manualLat = lat.d() ?: Double.NaN; s.manualLon = lon.d() ?: Double.NaN; s.manualAltMslFt = alt.d() ?: Double.NaN
-                agl.d()?.let { s.gpsAglFt = it }
-                if (s.manualMode == ManualMode.DEVICE_GPS && ContextCompat.checkSelfPermission(this@SettingsActivity, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
-                    askLoc.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
+        section(right, "Controller protection (no drone selected)").apply {
+            addView(note("When no drone is selected (no callsign or serial match, the drone's position lost for 30 s, or \"Protect this controller\"), Sentry protects these cylinders centred on this controller's GPS. It calls aircraft entering them, and warns early when one is predicted to pass within the warning ring of the controller."))
+            cylinderList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(cylinderList)
+            renderCylinders()
+            addView(row(button("Add cylinder", secondary = true) { editCylinder(null) }))
+            val elev = num("Controller elevation override (ft MSL, blank = GPS)", s.controllerElevFt)
+            savers += { s.controllerElevFt = elev.d() ?: Double.NaN }
+            locStatus = note(locText()); addView(locStatus)
+            addView(row(button("Allow location…", secondary = true) { askLoc.launch(Manifest.permission.ACCESS_FINE_LOCATION) }))
         }
 
         section(right, "Geofences").apply {
@@ -185,7 +220,129 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); if (::batteryStatus.isInitialized) batteryStatus.text = batteryText() }
+    override fun onResume() {
+        super.onResume()
+        if (::batteryStatus.isInitialized) batteryStatus.text = batteryText()
+        if (::locStatus.isInitialized) locStatus.text = locText()
+        fetchLiveCallsigns()
+    }
+
+    // ── drone selection helpers ─────────────────────────────────────────────
+    private fun styleField(e: EditText) {
+        e.textSize = 18f; e.setTextColor(col(R.color.ink)); e.setHintTextColor(col(R.color.dim))
+        e.setBackgroundResource(R.drawable.field_bg); e.setPadding(dp(10), dp(8), dp(10), dp(8)); e.isSingleLine = true
+        e.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        if (e is AutoCompleteTextView) {
+            e.threshold = 1
+            e.setDropDownBackgroundDrawable(android.graphics.drawable.ColorDrawable(col(R.color.panel2)))
+            e.setOnFocusChangeListener { _, has -> if (has && e.adapter?.count ?: 0 > 0) e.post { runCatching { e.showDropDown() } } }
+            e.setOnClickListener { if ((e.adapter?.count ?: 0) > 0) e.showDropDown() }
+        }
+    }
+
+    private fun darkAdapter(items: List<String>) = object : ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, items) {
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            (super.getView(position, convertView, parent) as TextView).apply {
+                setTextColor(col(R.color.ink)); setBackgroundColor(col(R.color.panel2)); textSize = 18f; setPadding(dp(14), dp(12), dp(14), dp(12))
+            }
+    }
+
+    private fun refreshSuggestions() {
+        val e = DroneHistory.entries(this)
+        patternField.setAdapter(darkAdapter(e.map { it.callsign }))
+        serialField.setAdapter(darkAdapter(e.mapNotNull { it.serial }.distinct()))
+    }
+
+    /** Live preview of what the typed pattern matches among the callsigns Sentry knows. */
+    private fun updatePreview() {
+        if (!::patternPreview.isInitialized) return
+        val p = CallsignPattern.compile(patternField.text.toString())
+        val known = DroneHistory.entries(this).map { it.callsign }
+        val hits = known.filter { p.matches(it) }
+        patternPreview.setTextColor(col(if (p.invalid) R.color.warning else if (hits.isEmpty()) R.color.dim else R.color.ok))
+        patternPreview.text = when {
+            p.invalid -> "Not a valid regular expression"
+            p.isBlank -> "No pattern: Sentry protects this controller unless a serial matches"
+            hits.isEmpty() -> "Matches none of the ${known.size} callsign(s) seen so far"
+            else -> "Matches: " + hits.take(6).joinToString(", ") + if (hits.size > 6) " …" else ""
+        }
+    }
+
+    /** One fetch of the live fleet feed when Settings opens, so callsigns airborne right now are suggested even if Sentry is not armed. */
+    private fun fetchLiveCallsigns() {
+        val token = s.fleetToken.takeIf { it.isNotBlank() } ?: return
+        val base = s.workerBase.trimEnd('/')
+        lifecycleScope.launch {
+            val drones = withContext(Dispatchers.IO) {
+                val http = Http(); val hdr = mapOf("X-Fleet-Token" to token); val now = System.currentTimeMillis()
+                runCatching { Parsers.parseDroneSense(http.get("$base/api/live/dronesense", hdr), now) }.getOrDefault(emptyList()) +
+                    runCatching { Parsers.parseOurDrones(http.get("$base/api/live/our-drones", hdr), now).drones }.getOrDefault(emptyList())
+            }
+            if (drones.isNotEmpty()) DroneHistory.observeLive(this@SettingsActivity, drones, System.currentTimeMillis())
+            if (::patternField.isInitialized) { refreshSuggestions(); updatePreview() }
+        }
+    }
+
+    // ── cylinders ─────────────────────────────────────────────────────────
+    private fun renderCylinders() {
+        cylinderList.removeAllViews()
+        val list = s.cylinders
+        if (list.isEmpty()) cylinderList.addView(note("No cylinders: with no drone selected, nothing is protected."))
+        list.forEachIndexed { i, c ->
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
+            r.addView(TextView(this).apply {
+                text = (if (c.enabled) "◉ " else "○ OFF · ") + c.describe(); textSize = 17f
+                setTextColor(col(if (c.enabled) R.color.ink else R.color.dim))
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            r.addView(button("Edit", secondary = true) { editCylinder(i) })
+            cylinderList.addView(r)
+        }
+    }
+
+    /** The cylinder editor. [index] null = new. Radius in nm or ft; limits in ft above the controller or ft MSL. */
+    private fun editCylinder(index: Int?) {
+        val list = s.cylinders.toMutableList()
+        val c = index?.let { list[it] } ?: Cylinder("c" + System.currentTimeMillis().toString(36), "cylinder ${list.size + 1}", 1.0, 0.0, 1500.0)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0) }
+        val name = box.field("Name (spoken: \"Traffic entering <name>\")", c.name)
+        val useFt = c.radiusNm < 1.0 && c.radiusNm * Units.FT_PER_NM % 100 == 0.0
+        val radius = box.num("Radius", if (useFt) c.radiusNm * Units.FT_PER_NM else c.radiusNm)
+        val unit = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        unit.addView(radio("nm", 301)); unit.addView(radio("ft", 302)); unit.check(if (useFt) 302 else 301); box.addView(unit)
+        val floor = box.num("Floor (ft)", c.floorFt)
+        val ceil = box.num("Ceiling (ft)", c.ceilingFt)
+        val ref = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        ref.addView(radio("ft above controller", 311)); ref.addView(radio("ft MSL", 312))
+        ref.check(if (c.ref == CylinderAltRef.MSL) 312 else 311); box.addView(ref)
+        val en = box.switch("Enabled", c.enabled)
+        val scroll = ScrollView(this).apply { addView(box) }
+        val dlg = AlertDialog.Builder(this, R.style.Sentry_Dialog)
+            .setTitle(if (index == null) "New cylinder" else "Edit cylinder")
+            .setView(scroll)
+            .setPositiveButton("Save", null)
+            .setNegativeButton("Cancel", null)
+            .apply { if (index != null) setNeutralButton("Delete") { _, _ -> list.removeAt(index); s.cylinders = list; renderCylinders() } }
+            .create()
+        dlg.setOnShowListener {
+            dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val rv = radius.d(); val fv = floor.d() ?: 0.0; val cv = ceil.d()
+                val rNm = rv?.let { if (unit.checkedRadioButtonId == 302) it / Units.FT_PER_NM else it }
+                val out = c.copy(name = name.text.toString().trim(), radiusNm = rNm ?: 0.0, floorFt = fv, ceilingFt = cv ?: 0.0,
+                    ref = if (ref.checkedRadioButtonId == 312) CylinderAltRef.MSL else CylinderAltRef.AGL_CONTROLLER, enabled = en.isChecked)
+                if (!out.valid()) { toast("Needs a name, a radius > 0, and a ceiling above the floor"); return@setOnClickListener }
+                if (index == null) list += out else list[index] = out
+                s.cylinders = list; renderCylinders(); dlg.dismiss()
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED)
+                    askLoc.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+        dlg.show()
+    }
+
+    private fun locText(): String {
+        val ok = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return if (ok) "Location permission: granted (controller GPS available)" else "Location permission: NOT granted — the controller cannot be protected"
+    }
     override fun onPause() { super.onPause(); saveAll() }
 
     private fun saveAll() = savers.forEach { runCatching { it() } }

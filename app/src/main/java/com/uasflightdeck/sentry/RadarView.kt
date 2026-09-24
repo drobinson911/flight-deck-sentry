@@ -24,6 +24,8 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     var targets: List<AlertEngine.TargetView> = emptyList(); set(v) { field = v; invalidate() }
     var rings: Triple<Double, Double, Double> = Triple(3.0, 1.0, 0.5); set(v) { field = v; invalidate() }
     var active = false; set(v) { field = v; invalidate() }
+    /** Controller mode: draw these cylinder radii (nm) instead of the drone rings, centre = the controller. */
+    var cylinderRadii: List<Double> = emptyList(); set(v) { field = v; invalidate() }
 
     private fun c(id: Int) = ContextCompat.getColor(context, id)
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
@@ -46,11 +48,14 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     override fun onDraw(cv: Canvas) {
         val cx = width / 2f; val cy = height / 2f
         val rMax = min(cx, cy) * 0.88f
-        val outerNm = rings.first
+        val cyl = cylinderRadii.filter { it > 0 }.sortedDescending()
+        val outerNm = cyl.firstOrNull() ?: rings.first
         fun r(nm: Double) = (nm / outerNm * rMax).toFloat()
 
         fill.color = c(R.color.panel); cv.drawCircle(cx, cy, min(cx, cy) * 0.98f, fill)
-        listOf(rings.first to R.color.advisory, rings.second to R.color.caution, rings.third to R.color.warning).forEach { (nm, col) ->
+        val drawn = if (cyl.isNotEmpty()) cyl.mapIndexed { i, nm -> nm to if (i == cyl.lastIndex) R.color.caution else R.color.advisory }
+            else listOf(rings.first to R.color.advisory, rings.second to R.color.caution, rings.third to R.color.warning)
+        drawn.forEach { (nm, col) ->
             ringPaint.color = c(col); ringPaint.alpha = if (active) 200 else 70
             cv.drawCircle(cx, cy, r(nm), ringPaint)
             small.color = c(col)
@@ -63,9 +68,9 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         cv.drawText("E", cx + rMax + 10, cy + 8, small)
         cv.drawText("W", cx - rMax - 30, cy + 8, small)
 
-        // drone
+        // drone (dot) or controller (square)
         fill.color = Color.WHITE
-        cv.drawCircle(cx, cy, 9f, fill)
+        if (cyl.isNotEmpty()) cv.drawRect(cx - 10, cy - 10, cx + 10, cy + 10, fill) else cv.drawCircle(cx, cy, 9f, fill)
 
         for (t in targets.sortedBy { it.severity.rank }) {
             val outside = t.distNm > outerNm
@@ -89,5 +94,5 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         }
     }
 
-    private fun fmt(nm: Double) = (if (nm < 1) "$nm" else "${nm.toInt()}") + " nm"
+    private fun fmt(nm: Double) = if (nm % 1.0 == 0.0) "${nm.toInt()} nm" else "${"%.2f".format(java.util.Locale.US, nm).trimEnd('0')} nm"
 }

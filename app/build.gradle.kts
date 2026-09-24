@@ -21,8 +21,8 @@ android {
         applicationId = "com.uasflightdeck.sentry"
         minSdk = 26            // RC Plus is Android 10 (29); 26 for headroom
         targetSdk = 33
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         buildConfigField("String", "FLEET_TOKEN", "\"${secrets.getProperty("FLEET_TOKEN", "")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
