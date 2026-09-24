@@ -149,6 +149,60 @@ protection around the controller, have the user fill out info for the cylinder(s
 - **Stationary controller.** A fix up to 60 s old is used (GPS and network providers are
   both requested, freshest wins); the UI shows its real age and accuracy.
 
+## Pinned serial, self-update, release signing (v0.3, 2026-09-24)
+
+Owner: "Let's do serial number also, type it once and it knows what drone that controller
+needs to watch forever."
+
+- **The pin is its own top tier**: pinned airborne > pinned on the pad > airborne pattern >
+  airborne serial > grounded pattern > grounded serial > controller. A pinned airframe that is
+  still on the pad beats an airborne pattern match: the owner said it is *the* drone for
+  this controller, and a pad-sitting M4T that is about to launch is the one to watch. When the
+  pattern matches a different drone, "Pinned aircraft wins" is spoken once per episode (it
+  resets when the pin stops being watched), and the reason stays in the drone panel's note.
+- **"Watching" or "Now watching"**: "Watching …, this controller's aircraft" when the pilot has
+  heard nothing yet. That covers start-up, including the pin arriving while the 5 s "No drone
+  selected" grace is still holding its line, which is then dropped. "Now watching …" when it
+  replaces something that was already spoken (another drone, or the controller). Switching from
+  callsign mode to pinned mode on the **same** airframe (the pilot pins the drone being watched)
+  says nothing: nothing changed about what is protected.
+- **"Forever" is re-evaluation, not a timer.** The selector re-ranks the live list every second,
+  so a pinned airframe that shows up an hour later is taken at once (a test covers 3,600 s).
+  The note "Pinned … not in the feed; still looking" is visible the whole time.
+- **Serials are compared trimmed and case-insensitively.** The feed's `serial` is a free
+  string, and the pilot may type it in lower case.
+- **Persistence: SharedPreferences, not DataStore**, like every other setting (see Architecture).
+  The pin is kept until the pilot clears it. The replay drone got a clearly **synthetic** serial
+  (`DemoReplayFixture.DRONE_SERIAL`, not DEMO-1's real one) so the pin can be exercised in replay.
+  `DemoSelectionReplayTest` asserts that pinning changes *who* is protected and nothing
+  else: the callouts are identical to the pattern run.
+- **Self-update from public GitHub releases**: `releases/latest` unauthenticated. The pure logic is in
+  `:core` (`SemVer`, `Releases.parseLatest`, `UpdatePolicy`) and is tested: numeric rather than
+  lexical comparison, pre-release below release, and a garbled tag is never "newer". Automatic
+  checks: once per 24 h after a success, once per hour after a failure, triggered by arming,
+  opening the app/Settings, and the service watchdog (cheap: the policy is one prefs read).
+  Offline or HTTP 403/429 only updates the status line; the pilot is never nagged about a
+  failed check.
+- **Install only on a tap, via a PackageInstaller session.** flightdeck-air learned in the field
+  that the `ACTION_VIEW` intent sometimes showed no prompt at all, and that a truncated download fails
+  in the installer with no UI. So Sentry verifies the length, the package name and that the version is
+  newer *before* committing a session, which always returns a result: the confirm screen, or an error
+  Sentry can show. No FileProvider is needed, because the session reads the file itself. A signature
+  conflict is turned into the uninstall-once instruction.
+- **"Install unknown apps"** is checked first (`canRequestPackageInstalls`). If it is off, a dialog explains
+  it and opens Android's page for Sentry. **Updating while armed** needs a second confirmation, because
+  replacing the app stops callouts until it is reopened (or until the opt-in re-arm-on-update brings it back).
+- **Signing.** A single release key (`~/.sentry-release.jks`, RSA 2048, 10,000 days, cert
+  SHA-256 `07d612bf…51dc`) is used by CI through repository secrets. The release workflow fails if
+  `apksigner` shows any other certificate. Settings shows whether the installed copy has that
+  certificate, so a pilot on an old debug-signed build knows ahead of time that a one-time
+  uninstall is coming. v1 (JAR) signing is not produced: minSdk 26 only needs v2.
+- **Version from one file.** `VERSION` → `versionName`; `versionCode = M·10000 + m·100 + p`, so it
+  can only go up with the version (0.2.0 was 2, 0.3.0 is 300). The release workflow refuses a tag
+  that doesn't match `VERSION`. `-PsentryVersion=` builds a test copy (0.2.9 was used to test the
+  updater against the published v0.3.0).
+- **Minify stays off.** There is no proguard config yet that has passed a smoke test.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with
@@ -179,7 +233,8 @@ protection around the controller, have the user fill out info for the cylinder(s
 
 ## Debug-only adb hooks
 
-`MainActivity` accepts `--es sentry_action replay|test|pin|set` **only when
+`MainActivity` accepts `--es sentry_action replay|test|set` (`set` takes `pattern`, `serials`,
+`pinned`, `protect_controller`, `station`, `station_url`, `worker`, `elev`) **only when
 `BuildConfig.DEBUG`**, for scripted demos. It will never disarm Sentry. Release builds
 ignore it.
 

@@ -74,6 +74,15 @@ hex, and the fresher **position** wins. Ages come from each feed's *relative* fi
 
 Settings → **Drone selection**:
 
+- **This controller's aircraft (serial)** (v0.3). Type the airframe serial once, or tap **Use the drone I'm
+  watching now** to copy the `serial` of the drone Sentry is watching. The field autocompletes from every
+  serial Sentry has seen. It is kept until you clear it, and the main screen shows it as
+  "Pinned: 1581F7K3C251F00C9B34 · DEMO-1 Pilot" (the serial and the last callsign seen with it).
+  The pinned airframe is watched **first**: airborne, else on the pad, ahead of any callsign or serial match.
+  Sentry says "Watching DEMO-1 Pilot, this controller's aircraft." If a *different* drone matches the pattern
+  at the same time, the pin still wins, and Sentry says "Pinned aircraft wins." once. When the pinned airframe
+  isn't in the feed, Sentry falls back through the rules below, but it checks for the pinned airframe every second and
+  switches to it as soon as it appears ("Now watching DEMO-1 Pilot, this controller's aircraft.").
 - **My callsign pattern**, e.g. `DEMO-# Pilot`. `#` = one digit, `*` = anything, case-insensitive,
   and spaces and hyphens are optional on both sides, so it matches DroneSense `callSign` "DEMO-1 Pilot"
   and "DEMO-1 Pilot". Start with `re:` for a plain regular expression (matched anywhere in the raw
@@ -85,7 +94,7 @@ Settings → **Drone selection**:
 - **Protect this controller** (switch, also in the main screen's **Drone…** list, which also lets you
   pick any known callsign).
 
-Order: an airborne drone matching the pattern → an airborne drone on the serial list → a matching
+Order: **the pinned serial** (airborne, else on the pad) → an airborne drone matching the pattern → an airborne drone on the serial list → a matching
 drone that is still on the pad → **this controller**. Airborne = AGL ≥ 5 ft or speed ≥ 0.5 m/s (a
 feed that gives neither counts as airborne). Within a tier the freshest `lastUpdate` wins ("Multiple
 matches, watching …"), and Sentry then stays on that drone while it remains in the best tier (no
@@ -95,7 +104,7 @@ serial" for a serial match).
 The watched drone going stale: after 15 s "Drone position lost"; after 30 s Sentry falls back to the
 controller cylinders and says "No drone position for 30 seconds. Protecting this controller."; when a
 matching drone is fresh again it says "Watching …" and goes back to it. The main screen shows the
-selection mode (CALLSIGN / SERIAL / CONTROL) and the controller GPS age and accuracy, computed from live
+selection mode (PINNED / CALLSIGN / SERIAL / CONTROL) and the controller GPS age and accuracy, computed from live
 state every tick.
 
 ## Controller protection cylinders
@@ -129,17 +138,65 @@ floor and ceiling in **ft above the controller** (default) or **ft MSL**, and an
 
 ## Install on the RC Plus
 
-1. Get an APK: from the **Actions** tab (artifact `flight-deck-sentry-debug-apk`), or run `./gradlew assembleDebug` locally.
-   A locally built APK embeds the fleet token from `secrets.properties`. The CI APK does not.
-2. Enable USB debugging on the RC Plus (Settings → About → tap Build number 7x → Developer options).
-3. `adb install -r app-debug.apk`. Alternatively, copy the APK to the controller and open it with a file manager (allow "install unknown apps").
-4. Open **Flight Deck Sentry** → **Settings**. Paste the fleet token if the APK doesn't have one built in. Set **My callsign pattern** (e.g. `DEMO-# Pilot`) and/or **My aircraft serials**, and check the **controller cylinders**. Optionally turn on the truck station.
+1. Get the APK. The link below always points to the newest release (signed with the Sentry release key):
+   **https://github.com/drobinson911/flight-deck-sentry/releases/latest/download/flight-deck-sentry.apk**
+   Open it in the controller's browser, or download it on a computer.
+2. Install it. On the controller, open the download and allow "install unknown apps" for the browser or file manager when Android asks.
+   Or, with USB debugging on (Settings → About → tap Build number 7x → Developer options): `adb install -r flight-deck-sentry.apk`.
+3. **Coming from 0.2.0 or older? Uninstall Sentry once first.** Those builds were signed with a throwaway CI debug
+   key, and Android refuses to install a differently-signed APK over them (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`,
+   see `docs/install-0.3.0-over-0.2.0.txt`). Uninstalling also clears Sentry's settings, so write down your pattern and
+   cylinders first. From 0.3.0 onward every release uses the same key and installs in place.
+4. Open **Flight Deck Sentry** → **Settings**. Paste the fleet token (release APKs have none built in). Set
+   **This controller's aircraft (serial)** and/or **My callsign pattern** (e.g. `DEMO-# Pilot`), and check the
+   **controller cylinders**. Optionally turn on the truck station.
 5. Tap **ARM**. Allow notifications and location (the controller's GPS is the fallback protected position). Accept the **battery-optimisation exemption** so Android doesn't throttle Sentry with the screen off.
 6. Tap **Test callout** to set the volume. Then switch to DroneSense: Sentry keeps running and its banners appear over DroneSense.
 
+## Updating
+
+Sentry updates itself from the public GitHub releases, but **it never installs without your tap**.
+
+- **Settings → App update** shows the installed version and build, the latest release on GitHub with its
+  release notes, and whether this copy is signed with the release key. **Check for update** asks GitHub now.
+  **Download and install** downloads `flight-deck-sentry.apk` with a progress bar, checks it (complete file,
+  package, newer version), then opens Android's installer. Tap **Install**, then **Open** to re-arm.
+- Sentry also checks by itself when it starts or is armed, and again from the service watchdog. It checks at most
+  **once every 24 h**, or once an hour after a failure. Being offline or hitting GitHub's 60-requests-per-hour
+  limit only changes the status line. A newer release posts a silent, low-priority notification
+  ("Sentry 0.3.1 available") once per version, and adds a banner to the main screen. Tapping the banner starts the
+  same download and install.
+- The first time, Android asks you to allow **Install unknown apps** for Flight Deck Sentry. Sentry explains
+  this and opens that settings page. Come back and tap the update again.
+- If Sentry is **armed** when you tap update, it asks you to confirm first: installing replaces the running app,
+  so callouts stop until you tap **Open**, or until Sentry re-arms by itself if "Re-arm automatically" is on.
+  Don't update in flight.
+- If the installed copy is signed with a different key (0.2.0 or older, or a CI debug build), the installer
+  refuses. Sentry says so and tells you to uninstall once.
+
+## Releasing (maintainers)
+
+The version lives in one place, the `VERSION` file (`0.3.0`). `versionCode` = major·10000 + minor·100 + patch
+(0.3.0 → 300). To release, bump `VERSION` and commit, then `git tag v0.3.0 && git push origin main v0.3.0`.
+`.github/workflows/release.yml` checks that the tag matches `VERSION`, runs the unit tests, builds
+`assembleRelease` signed with the repository secrets `SENTRY_KEYSTORE_B64` / `SENTRY_KEYSTORE_PASSWORD` /
+`SENTRY_KEY_ALIAS`, fails unless `apksigner` shows the release certificate
+(SHA-256 `07d612bf02fcdfcc3a617d091909bb83d3e44cfae7e58f34bd146b6a75cc51dc`), then attaches
+`flight-deck-sentry.apk` and its `.sha256` to the release for that tag. The release is created with generated notes
+if it doesn't exist yet. If a run fails, fix the problem on `main`, then move the tag and push it again
+(`git tag -f v0.3.0 && git push -f origin v0.3.0`), or re-run for the existing tag with **Actions → Release →
+Run workflow** (`tag: v0.3.0`). The upload uses `--clobber`, so a re-run replaces the APK.
+
+The keystore is **not** in the repo. The owner's backup copy is `~/.sentry-release.jks` plus `~/.sentry-release.env`
+(the password and alias) on the owner's build machine, both chmod 600. Keep them in the password manager too: losing the key means every
+controller has to uninstall once more. Gradle looks for the key in the environment (`SENTRY_KEYSTORE_FILE`,
+`SENTRY_KEYSTORE_PASSWORD`, `SENTRY_KEY_ALIAS`), then in `secrets.properties`, then in those two home-directory files.
+Without a key, `assembleRelease` stops with a clear error. When the key is present locally, **debug builds are
+signed with it too**, so a local build and a GitHub release can install over each other.
+
 ## Settings
 
-Fleet token (paste from the clipboard) · callsign pattern (autocomplete) · serial allowlist · protect this controller · pick a drone · worker URL · truck station on/off + address + beacon auto-discover · cloud on/off · traffic radius · advisory/caution/warning rings · vertical band · baro correction · predictive look-ahead · TFR watch distance · voice on/off + volume · controller cylinders (add / edit / delete) + controller elevation override · circle geofence · GeoJSON geofence import · re-arm after reboot · battery exemption · **Replay: demo encounter** (1× / 4×, optional public-feed view).
+This controller's aircraft (serial) · app update (check, notes, download and install) · Fleet token (paste from the clipboard) · callsign pattern (autocomplete) · serial allowlist · protect this controller · pick a drone · worker URL · truck station on/off + address + beacon auto-discover · cloud on/off · traffic radius · advisory/caution/warning rings · vertical band · baro correction · predictive look-ahead · TFR watch distance · voice on/off + volume · controller cylinders (add / edit / delete) + controller elevation override · circle geofence · GeoJSON geofence import · re-arm after reboot · battery exemption · **Replay: demo encounter** (1× / 4×, optional public-feed view).
 
 ## Replay mode
 
@@ -154,13 +211,20 @@ replay watches DEMO-1 or protects the controller cylinders. A replay clock is sh
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 1
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 4 --ez cloud_view true
 adb shell "am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --es pattern 'DEMO-# Pilot' --ez protect_controller false"
+adb shell "am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --es pinned 1581F7K3C251F00C9B34"
 ```
+
+The replay drone carries a **synthetic** serial, `1581F7K3C251F00C9B34`. The recorded track has no serial, so
+this placeholder is not DEMO-1's real one. It exists so you can pin the replay drone; see
+`docs/replay-logcat-pinned-serial.txt`.
 
 ## Build & test
 
 ```
-./gradlew testDebugUnitTest   # runs :core:test (engine, geodesy, CPA, parsers, demo replay) + app tests
+./gradlew testDebugUnitTest   # runs :core:test (engine, geodesy, CPA, parsers, demo replay, selection, updater) + app tests
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease     # needs the release key (see "Releasing"); fails clearly without it
+./gradlew assembleDebug -PsentryVersion=0.2.9   # a local build with another version (used to test the updater)
 ```
 
 JDK 17, compileSdk 34, minSdk 26, targetSdk 33, AGP 8.5.2, Kotlin 1.9.24, Gradle 8.14.3.
@@ -172,16 +236,21 @@ Copy `secrets.properties.example` to `secrets.properties` (gitignored) to bake i
 `docs/replay-logcat-*.txt`: the `Sentry` logcat from the replays, with every CALLOUT and SPEAK line
 (`-selection-pattern-DEMO-1` = watching by pattern; `-controller-cylinders` = no pattern, cylinders around the
 launch point; `-selection-live-stale-fallback` = the live selector on the emulator against a mock fleet feed).
-Screenshots 13–20 cover drone selection and controller protection; the "DEMO-2" and "DEMO-12 Smith"
+Screenshots 21–24 cover v0.3: the pinned serial (21, 22), the update panel (23), and Android's installer
+prompt opened by the in-app updater (24). Screenshots 13–20 cover drone selection and controller protection; the "DEMO-2" and "DEMO-12 Smith"
 callsigns in 13, 15, 18 and 20 came from a **mock** DroneSense feed on the emulator (nothing was flying).
 
 ## Layout
 
 ```
 core/  pure Kotlin/JVM: Geo, CpaMath, AlertEngine, HealthMonitor, Parsers, TrafficMerger, Replay,
-       Selection (CallsignPattern, DroneSelector, Cylinder, KnownDrones) (+ tests)
+       Selection (CallsignPattern, DroneSelector incl. pinned serial, Cylinder, KnownDrones),
+       Update (SemVer, Releases JSON, UpdatePolicy) (+ tests)
 app/   SentryService (FGS, pollers, watchdog, replay), AlertVoice (TTS+tones+ducking),
-       Notifier (status + heads-up), MainActivity, SettingsActivity, DronePicker, DroneHistory,
-       RadarView, BootReceiver
+       Notifier (status + heads-up + update), MainActivity, SettingsActivity, DronePicker, DroneHistory,
+       Updater (GitHub check, download, PackageInstaller session), UpdatePrompt, RadarView, BootReceiver
+VERSION                        the one version source (0.3.0 -> versionCode 300)
+.github/workflows/android.yml  every push: tests + debug APK artifact
+.github/workflows/release.yml  tag v*: tests + signed release APK attached to the GitHub release
 docs/  DESIGN.md, screenshots, replay logs
 ```

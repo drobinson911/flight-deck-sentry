@@ -1,0 +1,19 @@
+# 2026-09-24, emulator sentry-rc (android-34): installing 0.3.0 over 0.2.0
+# 0.2.0 (release v0.2.0 asset) was built by CI with the runner's throwaway debug key:
+$ apksigner verify --print-certs sentry-0.2.0.apk
+Signer #1 certificate DN: C=US, O=Android, CN=Android Debug
+Signer #1 certificate SHA-256 digest: a23ef1078dd6f22eae9de1947a86eef3bd63e5b3888cbf3e9cc500530701abd4
+
+$ adb install sentry-0.2.0.apk
+Success            (versionCode=2, versionName=0.2.0)
+
+# 0.3.0 is signed with the Sentry release key (SHA-256 07d612bf…51dc):
+$ adb install -r app-release.apk
+adb: failed to install app-release.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package com.uasflightdeck.sentry signatures do not match newer version; ignoring!]
+
+# Expected, and a one-time step: uninstall 0.2.0 (its settings go with it), then install 0.3.0.
+$ adb uninstall com.uasflightdeck.sentry
+Success
+$ adb install app-debug.apk      # local 0.3.0 build; signed with the same release key when ~/.sentry-release.jks is present
+Success
+# Every later release is signed with the same key, so it installs over 0.3.0 in place (in-app updater or adb install -r).
