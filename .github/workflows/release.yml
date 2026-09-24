@@ -1,0 +1,87 @@
+name: Release
+
+# Push a tag vX.Y.Z (matching the VERSION file) -> tests, a release-signed APK,
+# `apksigner verify`, and the APK attached to the GitHub release for that tag as
+# flight-deck-sentry.apk (the in-app updater and the stable link
+# releases/latest/download/flight-deck-sentry.apk both point at it).
+#
+# Re-running for the same tag is safe: the release is created if missing and the
+# APK is replaced (--clobber).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and attach, e.g. v0.3.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Tag must match VERSION
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          if [ "v$v" != "$TAG" ]; then echo "::error::tag $TAG does not match VERSION file ($v)"; exit 1; fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Android SDK packages
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;35.0.0" > /dev/null
+
+      - name: Unit tests (engine + demo replay + selection + updater)
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Release keystore from secrets
+        env:
+          SENTRY_KEYSTORE_B64: ${{ secrets.SENTRY_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$SENTRY_KEYSTORE_B64" ]; then echo "::error::SENTRY_KEYSTORE_B64 secret missing"; exit 1; fi
+          echo "$SENTRY_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/sentry-release.jks"
+
+      - name: Assemble signed release APK
+        env:
+          SENTRY_KEYSTORE_FILE: ${{ runner.temp }}/sentry-release.jks
+          SENTRY_KEYSTORE_PASSWORD: ${{ secrets.SENTRY_KEYSTORE_PASSWORD }}
+          SENTRY_KEY_ALIAS: ${{ secrets.SENTRY_KEY_ALIAS }}
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Verify signature (must be the release key)
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" | tee verify.txt
+          grep -q "certificate SHA-256 digest: 07d612bf02fcdfcc3a617d091909bb83d3e44cfae7e58f34bd146b6a75cc51dc" verify.txt \
+            || { echo "::error::APK is not signed with the Sentry release key"; exit 1; }
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$apk" | head -1
+          cp "$apk" flight-deck-sentry.apk
+          sha256sum flight-deck-sentry.apk | tee flight-deck-sentry.apk.sha256
+
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "Flight Deck Sentry ${TAG#v}" --generate-notes --verify-tag
+          fi
+          gh release upload "$TAG" flight-deck-sentry.apk flight-deck-sentry.apk.sha256 --clobber
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sentry-release.jks"

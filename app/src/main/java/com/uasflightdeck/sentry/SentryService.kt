@@ -180,6 +180,7 @@ class SentryService : Service() {
         startTickLoop()
         startWatchdog()
         SentryBus.log("ARMED (live)")
+        Updater.check(this)   // daily at most; quiet when offline or rate-limited
         dispatch(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, "Sentry armed"), "live")
     }
 
@@ -259,6 +260,7 @@ class SentryService : Service() {
                     if (beaconJob?.isActive != true) startBeacon()
                 } else { beaconJob?.cancel(); beaconJob = null }
                 acquireWakeLock()
+                Updater.check(this@SentryService)   // no-op unless 24 h since the last good check (1 h after a failure)
             }
         }
     }

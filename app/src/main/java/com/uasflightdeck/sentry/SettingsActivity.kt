@@ -32,6 +32,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.uasflightdeck.sentry.core.CallsignPattern
 import com.uasflightdeck.sentry.core.Cylinder
 import com.uasflightdeck.sentry.core.CylinderAltRef
@@ -54,6 +55,12 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var geofenceStatus: TextView
     private lateinit var batteryStatus: TextView
     private lateinit var patternField: AutoCompleteTextView
+    private lateinit var pinnedField: AutoCompleteTextView
+    private lateinit var pinnedNote: TextView
+    private lateinit var updateInfo: TextView
+    private lateinit var updateNotes: TextView
+    private lateinit var updateStatus: TextView
+    private lateinit var updateInstallBtn: MaterialButton
     private lateinit var serialField: MultiAutoCompleteTextView
     private lateinit var patternPreview: TextView
     private lateinit var protectSwitch: SwitchCompat
@@ -112,6 +119,20 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         section(left, "Drone selection").apply {
+            addView(label("This controller's aircraft (serial)"))
+            pinnedField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.pinnedSerial); hint = "type it once: Sentry watches this airframe first, forever" }
+            addView(pinnedField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+            pinnedNote = note(""); addView(pinnedNote)
+            addView(row(
+                button("Use the drone I'm watching now", secondary = true) { useWatchedDrone() },
+                button("Clear", secondary = true) { pinnedField.setText(""); s.pinnedSerial = ""; updatePinnedNote() },
+            ))
+            pinnedField.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) = updatePinnedNote()
+            })
+            savers += { s.pinnedSerial = pinnedField.text.toString() }
             addView(label("My callsign pattern"))
             patternField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.callsignPattern); hint = "e.g. DEMO-# Pilot" }
             addView(patternField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
@@ -134,6 +155,7 @@ class SettingsActivity : AppCompatActivity() {
             savers += { s.callsignPattern = patternField.text.toString(); s.serials = serialField.text.toString(); s.protectController = protectSwitch.isChecked }
             refreshSuggestions()
             updatePreview()
+            updatePinnedNote()
         }
 
         section(left, "Fleet feed (drone position)").apply {
@@ -168,6 +190,18 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ── RIGHT column ───────────────────────────────────────────────────
+        section(right, "App update (GitHub releases)").apply {
+            updateInfo = TextView(this@SettingsActivity).apply { textSize = 17f; setTextColor(col(R.color.ink)); setPadding(0, dp(4), 0, dp(4)) }
+            addView(updateInfo)
+            updateNotes = note(""); updateNotes.maxLines = 8; addView(updateNotes)
+            updateStatus = note(""); addView(updateStatus)
+            updateInstallBtn = button("Download and install") { startUpdate(this@SettingsActivity, s) }
+            addView(row(button("Check for update", secondary = true) { Updater.check(this@SettingsActivity, manual = true) }, updateInstallBtn))
+            lifecycleScope.launch {
+                repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { Updater.state.collect { renderUpdate() } }
+            }
+        }
+
         section(right, "Alert rings around the drone").apply {
             val a = num("Advisory ring (nm)", s.advisoryNm)
             val c = num("Caution ring (nm)", s.cautionNm)
@@ -225,6 +259,72 @@ class SettingsActivity : AppCompatActivity() {
         if (::batteryStatus.isInitialized) batteryStatus.text = batteryText()
         if (::locStatus.isInitialized) locStatus.text = locText()
         fetchLiveCallsigns()
+        renderUpdate()
+        Updater.check(this)          // rate-limited: at most daily
+    }
+
+    // ── update panel ────────────────────────────────────────────────────────
+    private fun renderUpdate() {
+        if (!::updateInfo.isInitialized) return
+        val ui = Updater.state.value
+        val latest = Updater.latest(s)
+        val avail = Updater.available(s)
+        val checked = s.updateLastSuccessMs.takeIf { it > 0 }?.let { DronePicker.ago(System.currentTimeMillis() - it) }
+        val sb = android.text.SpannableStringBuilder()
+        sb.append("Installed: ${Updater.current} (build ${BuildConfig.VERSION_CODE})\n")
+        sb.append("Latest on GitHub: ")
+        val a = sb.length
+        sb.append(when {
+            latest == null -> "not checked yet"
+            avail -> "${latest.version}  UPDATE AVAILABLE"
+            latest.version == com.uasflightdeck.sentry.core.SemVer.parse(Updater.current) -> "${latest.version}  up to date"
+            else -> "${latest.version}  (this build is newer)"
+        })
+        sb.setSpan(android.text.style.ForegroundColorSpan(col(if (avail) R.color.caution else if (latest == null) R.color.dim else R.color.ok)), a, sb.length, 0)
+        sb.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), a, sb.length, 0)
+        if (checked != null) sb.append("  (checked $checked)")
+        val release = Updater.signedWithReleaseKey(this)
+        sb.append("\nSigning: ")
+        val b = sb.length
+        sb.append(if (release) "release key (GitHub updates install in place)" else "NOT the release key: uninstall once, then install from GitHub")
+        sb.setSpan(android.text.style.ForegroundColorSpan(col(if (release) R.color.dim else R.color.caution)), b, sb.length, 0)
+        updateInfo.text = sb
+        updateNotes.text = latest?.notes?.takeIf { it.isNotBlank() }?.let { "Release notes (${latest.tag}):\n" + it.take(900) } ?: ""
+        updateNotes.visibility = if (updateNotes.text.isEmpty()) View.GONE else View.VISIBLE
+        updateStatus.text = ui.message.ifEmpty { s.updateLastMessage }
+        updateStatus.setTextColor(col(if (ui.downloading) R.color.advisory else R.color.dim))
+        updateInstallBtn.isEnabled = avail && !ui.downloading
+        updateInstallBtn.alpha = if (updateInstallBtn.isEnabled) 1f else 0.4f
+        updateInstallBtn.text = if (ui.downloading) "Downloading ${ui.progressPct ?: 0}%" else if (avail) "Download and install ${latest?.version}" else "Download and install"
+    }
+
+    // ── pinned serial ───────────────────────────────────────────────────────
+    private fun useWatchedDrone() {
+        val st = SentryBus.state.value
+        val o = st.ownship
+        when {
+            st.mode == Mode.OFF -> toast("Sentry isn't armed: arm it (or run the replay) so it is watching a drone")
+            o == null || st.selectionMode == com.uasflightdeck.sentry.core.SelectionMode.CONTROLLER -> toast("Not watching a drone right now")
+            o.serial.isNullOrBlank() -> toast("The feed gives no serial for ${o.callsign ?: o.name}")
+            else -> {
+                pinnedField.setText(o.serial); s.pinnedSerial = o.serial!!
+                toast("Pinned ${o.serial} (${o.callsign ?: o.name}) as this controller's aircraft")
+            }
+        }
+        updatePinnedNote()
+    }
+
+    private fun updatePinnedNote() {
+        if (!::pinnedNote.isInitialized) return
+        val v = pinnedField.text.toString().trim()
+        val e = DroneHistory.entries(this)
+        val cs = e.firstOrNull { it.serial?.trim()?.equals(v, ignoreCase = true) == true }?.callsign
+        pinnedNote.setTextColor(col(if (v.isEmpty()) R.color.dim else if (cs != null) R.color.ok else R.color.caution))
+        pinnedNote.text = when {
+            v.isEmpty() -> "Not set. When set, this airframe is watched first (airborne, else on the pad), even if the callsign pattern matches another drone."
+            cs != null -> "Pinned: $v · last seen as $cs. Watched first whenever it is in the feed."
+            else -> "Pinned: $v · not seen yet. Sentry keeps looking for it and switches the moment it appears."
+        }
     }
 
     // ── drone selection helpers ─────────────────────────────────────────────
@@ -251,6 +351,7 @@ class SettingsActivity : AppCompatActivity() {
         val e = DroneHistory.entries(this)
         patternField.setAdapter(darkAdapter(e.map { it.callsign }))
         serialField.setAdapter(darkAdapter(e.mapNotNull { it.serial }.distinct()))
+        if (::pinnedField.isInitialized) pinnedField.setAdapter(darkAdapter(e.mapNotNull { it.serial }.distinct()))
     }
 
     /** Live preview of what the typed pattern matches among the callsigns Sentry knows. */
@@ -279,7 +380,7 @@ class SettingsActivity : AppCompatActivity() {
                     runCatching { Parsers.parseOurDrones(http.get("$base/api/live/our-drones", hdr), now).drones }.getOrDefault(emptyList())
             }
             if (drones.isNotEmpty()) DroneHistory.observeLive(this@SettingsActivity, drones, System.currentTimeMillis())
-            if (::patternField.isInitialized) { refreshSuggestions(); updatePreview() }
+            if (::patternField.isInitialized) { refreshSuggestions(); updatePreview(); updatePinnedNote() }
         }
     }
 

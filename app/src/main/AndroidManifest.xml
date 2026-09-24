@@ -17,6 +17,8 @@
     <!-- Only for the "use this controller's GPS" manual-ownship fallback -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Self-update: hand a downloaded GitHub release APK to the system installer (only on the pilot's tap) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".SentryApp"

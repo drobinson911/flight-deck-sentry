@@ -26,6 +26,8 @@ class Settings(ctx: Context) {
         get() = p.getString("callsignPattern", null) ?: droneFilter.takeIf { it.isNotBlank() }?.let { "*$it*" } ?: ""
         set(v) = p.edit().putString("callsignPattern", v.trim()).apply()
     var serials by str("serials", "")
+    /** "This controller's aircraft": airframe serial pinned to this controller, kept until the pilot clears it. */
+    var pinnedSerial by str("pinnedSerial", "")
     /** User chose "Protect this controller": ignore drones entirely. */
     var protectController by bool("protectController", false)
     var workerBase by str("workerBase", "https://uas-app.drobinson911.workers.dev")
@@ -75,8 +77,19 @@ class Settings(ctx: Context) {
     var replayCloudView by bool("replayCloudView", false)
     var batteryPrompted by bool("batteryPrompted", false)
 
+    // self-update (GitHub releases): the last check's result, so the banner survives restarts
+    var updateLatestTag by str("updateLatestTag", "")
+    var updateNotes by str("updateNotes", "")
+    var updateApkUrl by str("updateApkUrl", "")
+    var updateApkSize by lng("updateApkSize", 0L)
+    var updateLastSuccessMs by lng("updateLastSuccessMs", 0L)
+    var updateLastAttemptMs by lng("updateLastAttemptMs", 0L)
+    var updateLastMessage by str("updateLastMessage", "")
+    var updateNotifiedVersion by str("updateNotifiedVersion", "")
+
     fun selectorConfig() = DroneSelector.SelectorConfig(
-        pattern = callsignPattern, serials = SerialList.parse(serials), forceController = protectController,
+        pattern = callsignPattern, serials = SerialList.parse(serials), pinnedSerial = pinnedSerial,
+        forceController = protectController,
     )
 
     fun engineConfig(): SentryConfig {
@@ -96,6 +109,10 @@ class Settings(ctx: Context) {
     private fun bool(k: String, d: Boolean) = object : kotlin.properties.ReadWriteProperty<Any?, Boolean> {
         override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>) = p.getBoolean(k, d)
         override fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Boolean) { p.edit().putBoolean(k, value).apply() }
+    }
+    private fun lng(k: String, d: Long) = object : kotlin.properties.ReadWriteProperty<Any?, Long> {
+        override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>) = p.getLong(k, d)
+        override fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: Long) { p.edit().putLong(k, value).apply() }
     }
     private fun dbl(k: String, d: Double) = object : kotlin.properties.ReadWriteProperty<Any?, Double> {
         override fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>) =

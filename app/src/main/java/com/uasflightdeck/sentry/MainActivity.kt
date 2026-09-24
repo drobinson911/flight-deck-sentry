@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var radar: RadarView
     private lateinit var btnArm: MaterialButton
     private lateinit var progress: ProgressBar
+    private lateinit var updateBanner: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +67,8 @@ class MainActivity : AppCompatActivity() {
         sources = findViewById(R.id.sources); targets = findViewById(R.id.targets); targetsLabel = findViewById(R.id.targetsLabel)
         callouts = findViewById(R.id.callouts); logView = findViewById(R.id.log); zones = findViewById(R.id.zones)
         radar = findViewById(R.id.radar); btnArm = findViewById(R.id.btnArm); progress = findViewById(R.id.replayProgress)
+        updateBanner = findViewById(R.id.updateBanner)
+        updateBanner.setOnClickListener { startUpdate(this, settings) }
 
         btnArm.setOnClickListener {
             val st = SentryBus.state.value
@@ -82,11 +85,38 @@ class MainActivity : AppCompatActivity() {
                 launch { SentryBus.calloutsFlow.collect { renderCallouts() } }
                 launch { SentryBus.logFlow.collect { logView.text = it.take(4).joinToString("\n") } }
                 launch { while (true) { delay(1000); render() } }
+                launch { Updater.state.collect { renderUpdateBanner() } }
             }
         }
         // Sticky state: if Sentry was armed but the service isn't running (e.g. app updated), re-arm.
         if (settings.armed && SentryBus.state.value.mode == Mode.OFF) SentryService.send(this, SentryService.ACTION_ARM)
         handleDebugIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Updater.check(this)          // rate-limited: at most once a day, quiet when offline
+        renderUpdateBanner()
+    }
+
+    private fun renderUpdateBanner() {
+        val ui = Updater.state.value
+        val avail = Updater.available(settings)
+        updateBanner.visibility = if (avail || ui.downloading) View.VISIBLE else View.GONE
+        if (updateBanner.visibility != View.VISIBLE) return
+        val v = Updater.latest(settings)?.version
+        updateBanner.text = when {
+            ui.downloading -> ui.message
+            ui.message.isNotEmpty() && !ui.message.startsWith("Sentry ") && !ui.message.startsWith("Up to date") -> "Sentry $v available · ${ui.message}"
+            else -> "Sentry $v available (you have ${Updater.current}) · tap to download and install"
+        }
+    }
+
+    /** "Pinned: <serial> · <last known callsign>" for the drone panel, or null when nothing is pinned. */
+    private fun pinnedLine(): String? {
+        val pin = settings.pinnedSerial.trim().ifEmpty { return null }
+        val cs = DroneHistory.entries(this).firstOrNull { it.serial?.trim()?.equals(pin, ignoreCase = true) == true }?.callsign
+        return "Pinned: $pin · ${cs ?: "not seen yet"}"
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -108,12 +138,13 @@ class MainActivity : AppCompatActivity() {
             }
             "test" -> SentryService.send(this, SentryService.ACTION_TEST)
             // --es station_url http://10.0.2.2:18080 --ez station true --es pattern "DEMO-# Pilot"
-            // --es serials "A,B" --ez protect_controller true --es worker http://10.0.2.2:18081
+            // --es serials "A,B" --es pinned 1581F7K3C251F00C9B34 --ez protect_controller true --es worker http://10.0.2.2:18081
             // --ef elev 5100 (controller elevation override; NaN clears it)
             "set" -> {
                 i.getStringExtra("station_url")?.let { settings.stationUrl = it }
                 if (i.hasExtra("station")) settings.stationEnabled = i.getBooleanExtra("station", false)
                 i.getStringExtra("pattern")?.let { settings.callsignPattern = it }
+                i.getStringExtra("pinned")?.let { settings.pinnedSerial = it }
                 i.getStringExtra("serials")?.let { settings.serials = it }
                 if (i.hasExtra("protect_controller")) settings.protectController = i.getBooleanExtra("protect_controller", false)
                 i.getStringExtra("worker")?.let { settings.workerBase = it }
@@ -183,6 +214,7 @@ class MainActivity : AppCompatActivity() {
         val o = st.ownship
         val controllerMode = st.selectionMode == SelectionMode.CONTROLLER
         droneLabel.text = when (st.selectionMode) {
+            SelectionMode.PINNED -> "Protecting · this controller's aircraft (pinned serial)"
             SelectionMode.CALLSIGN -> "Protecting · drone by callsign"
             SelectionMode.SERIAL -> "Protecting · drone by serial"
             SelectionMode.CONTROLLER -> "Protecting · this controller (no drone selected)"
@@ -198,10 +230,10 @@ class MainActivity : AppCompatActivity() {
             val why = if (settings.protectController) "chosen in Drone…" else st.ownshipNote.ifEmpty {
                 if (st.pattern.isBlank()) "no callsign pattern set" else "\"${st.pattern}\" matches nothing airborne" }
             val cyl = if (st.cylinders.isEmpty()) "No cylinder enabled: nothing protected (Settings)" else st.cylinders.joinToString("\n") { "◯ " + it.describe() }
-            droneDetail.text = "$why\n$pos\n$cyl"
+            droneDetail.text = listOfNotNull(pinnedLine(), why, pos, cyl).joinToString("\n")
         } else if (o == null) {
             drone.text = if (st.mode == Mode.OFF) "—" else "No drone"
-            droneDetail.text = st.ownshipNote.ifEmpty { if (st.mode == Mode.OFF) "Arm to start watching" else "" }
+            droneDetail.text = listOfNotNull(pinnedLine(), st.ownshipNote.ifEmpty { if (st.mode == Mode.OFF) "Arm to start watching" else "" }.ifEmpty { null }).joinToString("\n")
         } else {
             val sb = SpannableStringBuilder().add(o.name, bold = true)
             sb.add("  ${age(st.ownshipAgeSec)}", if (st.ownshipFresh) col(R.color.ok) else col(R.color.warning))
@@ -209,11 +241,12 @@ class MainActivity : AppCompatActivity() {
             drone.text = sb
             val alt = listOfNotNull(o.altMslFt?.let { "%,d ft MSL".format(Locale.US, it.toInt()) }, o.altAglFt?.let { "%,d AGL".format(Locale.US, it.toInt()) }).joinToString(" · ")
             val how = when (st.selectionMode) {
+                SelectionMode.PINNED -> "s/n ${o.serial ?: "?"} · "
                 SelectionMode.SERIAL -> "serial ${o.serial ?: "?"} · "
                 SelectionMode.CALLSIGN -> "pattern \"${st.pattern}\" · "
                 else -> ""
             }
-            droneDetail.text = "$how${o.source.label} · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
+            droneDetail.text = (pinnedLine()?.let { "$it\n" } ?: "") + "$how${o.source.label} · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
                 (if (st.ownshipNote.isNotEmpty()) "\n${st.ownshipNote}" else "")
         }
 
@@ -232,6 +265,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (st.mode != Mode.OFF && st.selectionMode != null) {
             val (lbl, c) = when (st.selectionMode) {
+                SelectionMode.PINNED -> "PINNED   " to R.color.ok
                 SelectionMode.CALLSIGN -> "CALLSIGN " to R.color.ok
                 SelectionMode.SERIAL -> "SERIAL   " to R.color.ok
                 SelectionMode.CONTROLLER -> "CONTROL  " to R.color.caution

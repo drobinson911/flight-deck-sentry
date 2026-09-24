@@ -20,7 +20,9 @@ import com.uasflightdeck.sentry.core.Severity
 object Notifier {
     const val CH_STATUS = "status"
     const val CH_ALERTS = "alerts"
+    const val CH_UPDATES = "updates"
     const val ID_STATUS = 1
+    const val ID_UPDATE = 2
 
     fun createChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
@@ -34,6 +36,24 @@ object Notifier {
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 250, 120, 250)
         })
+        nm.createNotificationChannel(NotificationChannel(CH_UPDATES, "App updates", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "A newer Sentry is on GitHub (never installs by itself)"
+            setShowBadge(false)
+        })
+    }
+
+    /** Low priority, silent: "Sentry 0.3.1 available". Tapping opens Sentry, where the pilot taps to install. */
+    fun updateAvailable(ctx: Context, version: String) {
+        val n = NotificationCompat.Builder(ctx, CH_UPDATES)
+            .setSmallIcon(R.drawable.ic_stat_sentry)
+            .setContentTitle("Sentry $version available")
+            .setContentText("Tap to open Sentry, then tap the update banner to install.")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setContentIntent(openApp(ctx))
+            .build()
+        runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID_UPDATE, n) }
     }
 
     private fun openApp(ctx: Context): PendingIntent = PendingIntent.getActivity(
