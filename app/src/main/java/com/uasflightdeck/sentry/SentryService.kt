@@ -173,7 +173,7 @@ class SentryService : Service() {
         if (mode == Mode.REPLAY) { settings.armed = true; return }  // replay returns to live when it ends
         mode = Mode.LIVE
         engine = AlertEngine(settings.engineConfig(), externalSelection = true)
-        selector = DroneSelector(settings.selectorConfig())
+        selector = DroneSelector(settings.selectorConfig()); loggedBound = ""
         armedAtMs = System.currentTimeMillis()
         health.setEnabled("fleet", true, armedAtMs)
         health.setEnabled("tfr", true, armedAtMs)
@@ -386,9 +386,15 @@ class SentryService : Service() {
         }
     }
 
+    /** The binding last logged by [liveTick] ("" = not logged yet). */
+    private var loggedBound: String? = ""
+
     private fun liveTick(now: Long) {
         syncSettings()
         selector.config = settings.selectorConfig()
+        // Settings auto-saves while the pilot types (0.3.4); log every change of the binding so it can be verified.
+        val bound = DroneSelector.normaliseSerial(selector.config.pinnedSerial)
+        if (bound != loggedBound) { loggedBound = bound; SentryBus.log("Selection: bound to ${bound ?: "nothing (controller only)"}") }
         val sel = selector.step(now, fdaDrones + dsDrones, controllerFix())
         val own = sel.ownship
         if (own != null) lastOwnPos = own.pos

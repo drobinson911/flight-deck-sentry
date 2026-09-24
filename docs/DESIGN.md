@@ -349,6 +349,39 @@ Owner: "make sure this software never impacts DroneSense on the controller while
   `docs/perf-armed-5min-rc-plus-29.txt`.
 - No USB, serial or DJI SDK code or permission.
 
+## v0.3.4 (2026-09-24): Settings save themselves, the keyboard gets out of the way
+
+Owner: "can we make it so stuff typed in the field auto saves, and if enter hit or the save button touched, keyboard
+dismisses?"
+
+- **Auto-save.** Each field's `TextWatcher` validates at once and schedules one shared, debounced (400 ms) save of the
+  whole page. Switches, the volume slider and the replay options save the same way. Save, Back, Enter/Done, system
+  Back and `onPause` save immediately. The service already re-read `Settings` on every 1 s tick (engine config, rings,
+  voice, pinned serial, cylinders, target display, controller elevation, circle) and on every poll (fleet token,
+  worker URL, station URL, traffic radius), so no service change was needed to apply a value. It now logs each change
+  of the binding (`Selection: bound to <serial>` or `bound to nothing`) so that can be checked in logcat.
+- **Never store garbage.** `FieldRules` (pure, unit-tested) parses a plain decimal only (no exponent, `NaN`,
+  `Infinity`, Java `d`/`f` suffix or comma) and checks it against the field's range. While the text is invalid the
+  field has a red outline with the range under it, and storage keeps the **last valid value**. The three rings are
+  also checked together (advisory ≥ caution ≥ warning). A mis-ordered trio turns all three red and the stored trio is
+  kept. Blank is valid only where it means something (controller elevation and circle centre: blank = GPS / unset).
+  The worker URL must be `http(s)://host`. The fleet token is trimmed. The pinned serial is shown and stored
+  upper-case and trimmed.
+- **Keyboard.** Every field is single-line with `actionDone`. Enter/Done, Save, Back and a tap outside any field hide
+  the keyboard and clear focus. The page root is focusable, so focus goes there and not to the next field. Its
+  default focus highlight is off, because Android 8+ paints a grey wash over a focused view that has no focus state.
+  Tapping another field just moves focus and the keyboard stays up.
+- **The cylinder editor** is still an explicit dialog (Save / Cancel / Delete), so it does not auto-save: Cancel must
+  still mean cancel. Its fields get the same red outline, range and Done handling, and Save refuses while one is red.
+- Known behaviour: while armed, retyping the serial character by character can bind to the partial serial for a
+  moment (after a 400 ms pause). Sentry then says "Waiting for this controller's aircraft" until the full serial
+  matches. Tapping the aircraft in the "in the feed now" list avoids this.
+- Verified on `rc-plus-29` (screenshots 58–65): typed caution 1.5 and it was stored with no Save; typed 2 and backed
+  out, and it reopened as 2; 75 went red with "0.1–50 nm" and 5 gave the ring-order error, with storage still at the
+  last valid value both times; Enter, Save (with the "Saved" toast), system Back and a tap outside each closed the
+  keyboard (`mInputShown=false`); a lower-case serial was stored upper-case, and the running service (same PID, not
+  restarted) logged `bound to 1581DEMO0001`, then `bound to nothing` after Clear.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with

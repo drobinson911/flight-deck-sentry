@@ -170,6 +170,12 @@ three columns above it scrolls on its own when its content is taller than the sc
 column with Back/Save pinned at the top. Its order is: alert rings (and targets shown), controller cylinders, this
 controller's aircraft, then feeds, voice, geofences, background, app update, and the replay last.
 
+**Settings save themselves (0.3.4).** Every field is stored about 0.4 s after you stop typing, so leaving Settings
+without tapping Save loses nothing, and the armed service uses the new value within a second. A number that isn't
+valid or is out of range turns the field red with its range under it (for example "0.1–50 nm"), and Sentry keeps
+using the last valid value. Enter/Done, Save, Back, or a tap outside a field closes the keyboard. Save still works:
+it applies everything at once and says "Saved".
+
 ## Coexistence with DroneSense (v0.3.3)
 
 Owner: "make sure this software never impacts DroneSense on the controller while we're flying."
