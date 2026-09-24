@@ -63,6 +63,13 @@ object DemoReplayFixture {
      */
     const val DRONE_CALLSIGN = "DEMO-1 Pilot"
 
+    /**
+     * SYNTHETIC airframe serial for the replay drone. The recorded DEMO-1 track
+     * carries no serial; this placeholder (DJI-style shape, NOT DEMO-1's real
+     * serial) is added so the replay exercises "This controller's aircraft".
+     */
+    const val DRONE_SERIAL = "1581F7K3C251F00C9B34"
+
     /** DEMO-1's launch point, used as the simulated controller position in replays. */
     const val LAUNCH_LAT = 39.4290
     const val LAUNCH_LON = -120.0344
@@ -84,7 +91,7 @@ object DemoReplayFixture {
         val own = uObj?.get("results").arr().orEmpty().mapNotNull { el ->
             val r = el.obj() ?: return@mapNotNull null
             Ownship(
-                id = "DEMO-1", name = DRONE_CALLSIGN, callsign = DRONE_CALLSIGN,
+                id = "DEMO-1", name = DRONE_CALLSIGN, callsign = DRONE_CALLSIGN, serial = DRONE_SERIAL,
                 lat = r.num("lat") ?: return@mapNotNull null,
                 lon = r.num("lon") ?: return@mapNotNull null,
                 altMslFt = r.num("msl_ft"), altAglFt = r.num("agl_ft"),

@@ -152,6 +152,8 @@ data class Cylinder(
 }
 
 enum class SelectionMode(val label: String) {
+    /** "This controller's aircraft": the pinned airframe serial. Beats everything else. */
+    PINNED("pinned"),
     CALLSIGN("callsign"),
     SERIAL("serial"),
     CONTROLLER("controller"),
@@ -161,6 +163,11 @@ enum class SelectionMode(val label: String) {
  * Chooses what Sentry protects, re-evaluated on EVERY tick from the live
  * drone list (never "last event wins"):
  *
+ *  0. "This controller's aircraft": the drone whose serial is PINNED
+ *     (airborne, else on the pad). It beats a callsign match even when the
+ *     pattern matches a different drone ("Pinned aircraft wins", said once).
+ *     When it is not in the feed Sentry falls back as below, but keeps looking
+ *     for it every tick and switches to it the moment it appears.
  *  1. an AIRBORNE drone whose callsign matches the pattern,
  *  2. an AIRBORNE drone whose serial is on the allowlist,
  *  3. a matching drone that is fresh but still on the pad (pattern, then serial),
@@ -178,9 +185,16 @@ enum class SelectionMode(val label: String) {
  */
 class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
 
+    companion object {
+        /** Trimmed, upper-case; null when blank. Serials are compared this way everywhere. */
+        fun normaliseSerial(s: String?): String? = s?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+    }
+
     data class SelectorConfig(
         val pattern: String = "",
         val serials: Set<String> = emptySet(),
+        /** This controller's aircraft (airframe serial), blank = none. Compared trimmed and case-insensitively. */
+        val pinnedSerial: String = "",
         val forceController: Boolean = false,
         val staleSec: Double = 15.0,
         val fallbackSec: Double = 30.0,
@@ -212,12 +226,13 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
     private var pendingControllerSpeech: String? = null
     private var controllerGpsAnnouncedLost = false
     private var controllerModeSinceMs = 0L
+    private var pinConflictAnnounced = false
 
     val currentMode: SelectionMode? get() = mode
 
     fun reset() {
         mode = null; watchedId = null; watched = null; firstMs = null
-        pendingControllerSpeech = null; controllerGpsAnnouncedLost = false
+        pendingControllerSpeech = null; controllerGpsAnnouncedLost = false; pinConflictAnnounced = false
     }
 
     fun step(nowMs: Long, drones: List<Ownship>, controller: ControllerFix?): Result {
@@ -232,16 +247,24 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         val byId = drones.groupBy { it.id }.mapValues { (_, v) -> v.maxBy { it.posTimeMs } }
         watchedId?.let { id -> byId[id]?.let { d -> if (watched == null || d.posTimeMs >= watched!!.posTimeMs) watched = d } }
 
+        val pinned = normaliseSerial(cfg.pinnedSerial)
+        fun pinMatch(o: Ownship) = pinned != null && normaliseSerial(o.serial) == pinned
         fun patMatch(o: Ownship) = pat.matches(o.callsign ?: o.name)
         fun serMatch(o: Ownship) = SerialList.contains(cfg.serials, o.serial)
         fun tier(o: Ownship): Int? = when {
-            patMatch(o) && o.isAirborne -> 0
-            serMatch(o) && o.isAirborne -> 1
-            patMatch(o) -> 2
-            serMatch(o) -> 3
+            pinMatch(o) && o.isAirborne -> 0
+            pinMatch(o) -> 1
+            patMatch(o) && o.isAirborne -> 2
+            serMatch(o) && o.isAirborne -> 3
+            patMatch(o) -> 4
+            serMatch(o) -> 5
             else -> null
         }
-        fun modeOf(o: Ownship) = if (patMatch(o)) SelectionMode.CALLSIGN else SelectionMode.SERIAL
+        fun modeOf(o: Ownship) = when {
+            pinMatch(o) -> SelectionMode.PINNED
+            patMatch(o) -> SelectionMode.CALLSIGN
+            else -> SelectionMode.SERIAL
+        }
 
         // The watched drone stays a candidate while its last position is fresh, even
         // if the feed dropped it from this poll (it ages out after staleSec like any other).
@@ -250,13 +273,16 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         val ranked = fresh.mapNotNull { d -> tier(d)?.let { d to it } }
         val bestTier = ranked.minOfOrNull { it.second }
         val inBest = ranked.filter { it.second == bestTier }.map { it.first }
-        val matchCount = fresh.count { patMatch(it) || serMatch(it) }
+        val matchCount = fresh.count { pinMatch(it) || patMatch(it) || serMatch(it) }
+        val pinnedFresh = pinned != null && fresh.any { pinMatch(it) }
 
         var note = when {
             pat.invalid -> "Callsign pattern is not a valid regex"
-            pat.isBlank && cfg.serials.isEmpty() -> "No callsign pattern or serial set (Settings)"
+            pinned == null && pat.isBlank && cfg.serials.isEmpty() -> "No pinned serial, callsign pattern or serial set (Settings)"
             else -> ""
         }
+        if (pinned != null && !pinnedFresh && !cfg.forceController)
+            note = listOf("Pinned ${cfg.pinnedSerial.trim()} not in the feed; still looking", note).filter { it.isNotEmpty() }.joinToString(" · ")
 
         val prevMode = mode
         val prevId = watchedId
@@ -286,8 +312,29 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         if (newMode != SelectionMode.CONTROLLER) {
             val d = newDrone!!
             val name = d.callsign ?: d.name
+            if (newMode == SelectionMode.PINNED) {
+                if (prevId != d.id) {
+                    // "Watching" when the pilot has heard nothing yet (start-up); "Now watching" when it
+                    // replaces something already announced (another drone, or the controller).
+                    val heardNothing = prevMode == null || (prevMode == SelectionMode.CONTROLLER && pendingControllerSpeech != null)
+                    val lead = if (heardNothing) "Watching" else "Now watching"
+                    events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
+                        "$lead $name, this controller's aircraft.", "$lead ${Phrasing.spelledId(name)}, this controller's aircraft.")
+                }
+                // A different drone matches the callsign pattern (or the serial list): the pin wins. Said once.
+                val rival = fresh.firstOrNull { it.id != d.id && (patMatch(it) || serMatch(it)) }
+                if (rival != null && !pinConflictAnnounced) {
+                    val rn = rival.callsign ?: rival.name
+                    events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
+                        "Pinned aircraft wins over $rn.", "Pinned aircraft wins.")
+                    pinConflictAnnounced = true
+                }
+                if (rival != null) note = listOf(note, "Pinned aircraft wins over ${rival.callsign ?: rival.name}").filter { it.isNotEmpty() }.joinToString(" · ")
+            } else {
+                pinConflictAnnounced = false
+            }
             val bySerial = if (newMode == SelectionMode.SERIAL) " by serial" else ""
-            if (prevId != d.id) {
+            if (prevId != d.id && newMode != SelectionMode.PINNED) {
                 val multi = inBest.size > 1 && inBest.contains(d)
                 val lead = when {
                     multi -> "Multiple matches, watching"
@@ -320,6 +367,7 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
                 }
             }
             watchedId = null; watched = null
+            pinConflictAnnounced = false
         }
         mode = newMode
 
@@ -394,6 +442,12 @@ class KnownDrones(private val max: Int = 200) {
     fun entries(): List<Entry> = byCallsign.values.sortedByDescending { it.lastSeenMs }
     fun callsigns(): List<String> = entries().map { it.callsign }
     fun serials(): List<String> = entries().mapNotNull { it.serial }.distinct()
+
+    /** The most recently seen callsign flown by airframe [serial] (case-insensitive), or null. */
+    fun callsignForSerial(serial: String?): String? {
+        val k = DroneSelector.normaliseSerial(serial) ?: return null
+        return entries().firstOrNull { DroneSelector.normaliseSerial(it.serial) == k }?.callsign
+    }
 
     fun toJson(): String = JsonArray(entries().map { e ->
         JsonObject(buildMap {

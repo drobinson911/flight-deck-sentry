@@ -24,8 +24,8 @@ class DemoSelectionReplayTest {
 
     private data class Run(val events: List<AlertEvent>, val modes: List<Pair<Long, SelectionMode>>)
 
-    private fun run(pattern: String, cylinders: List<Cylinder>, force: Boolean = false): Run {
-        val selector = DroneSelector(DroneSelector.SelectorConfig(pattern = pattern, forceController = force))
+    private fun run(pattern: String, cylinders: List<Cylinder>, force: Boolean = false, pinned: String = ""): Run {
+        val selector = DroneSelector(DroneSelector.SelectorConfig(pattern = pattern, forceController = force, pinnedSerial = pinned))
         val engine = AlertEngine(externalSelection = true)
         val out = ArrayList<AlertEvent>(); val modes = ArrayList<Pair<Long, SelectionMode>>()
         var t = sc.startMs
@@ -64,6 +64,24 @@ class DemoSelectionReplayTest {
         assertTrue(kotlin.math.abs(tfr.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
         assertTrue("no cylinder callouts while a drone is watched", r.events.none { it.kind == EventKind.CYLINDER_ENTRY })
         assertTrue(r.events.none { it.kind == EventKind.OWNSHIP_LOST })
+    }
+
+    /** v0.3: the replay drone pinned by its (synthetic) serial, with a pattern that matches nothing. */
+    @Test fun pinnedSerialWatchesDemo1AndStillWarnsAt115257() {
+        assertEquals("1581F7K3C251F00C9B34", DemoReplayFixture.DRONE_SERIAL)
+        val r = run("DEMO## Smith", Cylinder.DEFAULTS, pinned = DemoReplayFixture.DRONE_SERIAL.lowercase())
+        dump("pinned serial ${DemoReplayFixture.DRONE_SERIAL}", r.events)
+        assertTrue("never left pinned mode", r.modes.all { it.second == SelectionMode.PINNED })
+        val first = r.events.first()
+        assertEquals("Watching DEMO-1 Pilot, this controller's aircraft.", first.text)
+        assertEquals(sc.startMs, first.timeMs)
+        assertEquals(1, r.events.count { it.kind == EventKind.SELECTION })
+        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
+        assertEquals("11:52:57", hms(warn.timeMs))
+        assertEquals(EventKind.PREDICTIVE, warn.kind)
+        // the engine output is identical to the pattern run: pinning changes WHO is protected, not the callouts
+        val byPattern = run("DEMO-# Pilot", Cylinder.DEFAULTS).events.filter { it.kind != EventKind.SELECTION }
+        assertEquals(byPattern.map { it.timeMs to it.text }, r.events.filter { it.kind != EventKind.SELECTION }.map { it.timeMs to it.text })
     }
 
     @Test fun nonMatchingPatternFallsBackToController() {
