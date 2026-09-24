@@ -69,7 +69,7 @@ object DemoReplayFixture {
     const val LAUNCH_ELEV_FT = 5100.0
 
     fun launchController(timeMs: Long) = ControllerFix(LAUNCH_LAT, LAUNCH_LON, LAUNCH_ELEV_FT, 5.0, timeMs,
-        label = "replay controller (DEMO-1 launch point)")
+        label = "controller GPS · replay pad")
 
     /**
      * @param cloudView true = replay N388KM as the PUBLIC feed saw it: alt_baro

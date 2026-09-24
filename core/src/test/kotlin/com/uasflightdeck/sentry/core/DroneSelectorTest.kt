@@ -108,6 +108,22 @@ class DroneSelectorTest {
         assertEquals(SelectionMode.CONTROLLER, s.at(31).mode)
     }
 
+    /** Found on the emulator: a drone that vanishes from the feed must be held until it is stale, not dropped at once. */
+    @Test fun droneVanishingFromFeedIsHeldThenLostThenFallsBack() {
+        val s = sel()
+        val other = drone("x", "DEMO-2", sec(0))
+        s.at(0, drone("b", "DEMO-1 Pilot", sec(0)), other)
+        for (n in 1..30) {
+            val r = s.at(n, other.copy(posTimeMs = sec(n)))
+            assertEquals("t=$n", SelectionMode.CALLSIGN, r.mode)
+            assertEquals("b", r.ownship!!.id)
+            assertTrue(r.events.isEmpty())
+        }
+        val fb = s.at(31, other.copy(posTimeMs = sec(31)))
+        assertEquals(SelectionMode.CONTROLLER, fb.mode)
+        assertEquals("No drone position for 30 seconds. Protecting this controller.", fb.events.single().text)
+    }
+
     @Test fun forceControllerIgnoresDrones() {
         val s = sel(force = true)
         val r = s.at(0, drone("b", "DEMO-1 Pilot", sec(0)))

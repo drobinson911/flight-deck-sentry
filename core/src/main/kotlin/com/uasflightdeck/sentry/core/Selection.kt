@@ -243,7 +243,10 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         }
         fun modeOf(o: Ownship) = if (patMatch(o)) SelectionMode.CALLSIGN else SelectionMode.SERIAL
 
-        val fresh = byId.values.filter { isFresh(it) }
+        // The watched drone stays a candidate while its last position is fresh, even
+        // if the feed dropped it from this poll (it ages out after staleSec like any other).
+        val held = watched?.takeIf { w -> w.id !in byId }
+        val fresh = (byId.values + listOfNotNull(held)).filter { isFresh(it) }
         val ranked = fresh.mapNotNull { d -> tier(d)?.let { d to it } }
         val bestTier = ranked.minOfOrNull { it.second }
         val inBest = ranked.filter { it.second == bestTier }.map { it.first }
