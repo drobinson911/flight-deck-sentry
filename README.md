@@ -185,7 +185,10 @@ The version lives in one place, the `VERSION` file (`0.3.0`). `versionCode` = ma
 `flight-deck-sentry.apk` and its `.sha256` to the release for that tag. The release is created with generated notes
 if it doesn't exist yet. If a run fails, fix the problem on `main`, then move the tag and push it again
 (`git tag -f v0.3.0 && git push -f origin v0.3.0`), or re-run for the existing tag with **Actions → Release →
-Run workflow** (`tag: v0.3.0`). The upload uses `--clobber`, so a re-run replaces the APK.
+Run workflow** (`tag: v0.3.0`). The upload uses `--clobber`, so a re-run replaces the APK. Pilot-facing release
+notes, which the in-app updater shows, come from `docs/release-notes/<tag>.md` when that file exists; otherwise
+GitHub generates notes, which are only a changelog link. The `SENTRY_KEY_ALIAS` secret is `sentry`, so Actions
+logs mask every "sentry" as `***` (for example `flight-deck-***.apk`). That only affects the logs.
 
 The keystore is **not** in the repo. The owner's backup copy is `~/.sentry-release.jks` plus `~/.sentry-release.env`
 (the password and alias) on the owner's build machine, both chmod 600. Keep them in the password manager too: losing the key means every
@@ -236,8 +239,11 @@ Copy `secrets.properties.example` to `secrets.properties` (gitignored) to bake i
 `docs/replay-logcat-*.txt`: the `Sentry` logcat from the replays, with every CALLOUT and SPEAK line
 (`-selection-pattern-DEMO-1` = watching by pattern; `-controller-cylinders` = no pattern, cylinders around the
 launch point; `-selection-live-stale-fallback` = the live selector on the emulator against a mock fleet feed).
-Screenshots 21–24 cover v0.3: the pinned serial (21, 22), the update panel (23), and Android's installer
-prompt opened by the in-app updater (24). Screenshots 13–20 cover drone selection and controller protection; the "DEMO-2" and "DEMO-12 Smith"
+Screenshots 21–26 cover v0.3: the pinned serial set with "Use the drone I'm watching now" (21) and the replay
+watching DEMO-1 as this controller's aircraft (22). The updater test: a local 0.2.9 build finds the published v0.3.0
+(23), downloads it and opens Android's installer (24), and after the in-place update says 0.3.0 is up to date, with
+the pinned serial kept (25). 25 is the released 0.3.0: its status line still shows the message saved before the
+update ("Sentry 0.3.0 is available"). 26 is the fix on `main`, where that line is derived from the current state. Screenshots 13–20 cover drone selection and controller protection; the "DEMO-2" and "DEMO-12 Smith"
 callsigns in 13, 15, 18 and 20 came from a **mock** DroneSense feed on the emulator (nothing was flying).
 
 ## Layout

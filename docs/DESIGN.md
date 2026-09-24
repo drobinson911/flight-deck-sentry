@@ -202,6 +202,13 @@ needs to watch forever."
   that doesn't match `VERSION`. `-PsentryVersion=` builds a test copy (0.2.9 was used to test the
   updater against the published v0.3.0).
 - **Minify stays off.** There is no proguard config yet that has passed a smoke test.
+- **Verified end to end on the emulator (2026-09-24).** 0.2.0 (CI debug key) refuses 0.3.0 with
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (`docs/install-0.3.0-over-0.2.0.txt`). A local 0.2.9 found the
+  published v0.3.0, raised the notification and the banner, sent the pilot through "Install unknown apps", checked
+  the 5,419,381-byte APK and opened the installer. After tapping Update it was running 0.3.0 (versionCode 300),
+  with settings kept. Found there and fixed on `main` after the tag: the status line showed a message saved before
+  the update ("Sentry 0.3.0 is available" on 0.3.0). It is now derived from the installed and latest versions, with a
+  failed last check appended.
 
 ## Voice path
 

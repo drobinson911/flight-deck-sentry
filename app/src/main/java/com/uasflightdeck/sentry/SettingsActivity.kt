@@ -193,7 +193,7 @@ class SettingsActivity : AppCompatActivity() {
         section(right, "App update (GitHub releases)").apply {
             updateInfo = TextView(this@SettingsActivity).apply { textSize = 17f; setTextColor(col(R.color.ink)); setPadding(0, dp(4), 0, dp(4)) }
             addView(updateInfo)
-            updateNotes = note(""); updateNotes.maxLines = 8; addView(updateNotes)
+            updateNotes = note(""); updateNotes.maxLines = 14; addView(updateNotes)
             updateStatus = note(""); addView(updateStatus)
             updateInstallBtn = button("Download and install") { startUpdate(this@SettingsActivity, s) }
             addView(row(button("Check for update", secondary = true) { Updater.check(this@SettingsActivity, manual = true) }, updateInstallBtn))
@@ -291,7 +291,22 @@ class SettingsActivity : AppCompatActivity() {
         updateInfo.text = sb
         updateNotes.text = latest?.notes?.takeIf { it.isNotBlank() }?.let { "Release notes (${latest.tag}):\n" + it.take(900) } ?: ""
         updateNotes.visibility = if (updateNotes.text.isEmpty()) View.GONE else View.VISIBLE
-        updateStatus.text = ui.message.ifEmpty { s.updateLastMessage }
+        // Derived from live state, never a message persisted before an update (it said "0.3.0 is available"
+        // right after 0.3.0 was installed). A failed last check is appended as-is.
+        val derived = when {
+            latest == null -> ""
+            avail -> "Sentry ${latest.version} is available"
+            com.uasflightdeck.sentry.core.SemVer.isNewer(Updater.current, latest.tag) -> "This build is newer than the latest release"
+            else -> "Up to date"
+        }
+        val lastFailed = s.updateLastAttemptMs > s.updateLastSuccessMs && s.updateLastMessage.isNotEmpty()
+        updateStatus.text = when {
+            ui.checking || ui.downloading -> ui.message
+            ui.message.isNotEmpty() && !ui.message.startsWith("Sentry ") && ui.message != "Up to date" &&
+                !ui.message.startsWith("This build") && !lastFailed -> ui.message   // download / install errors
+            lastFailed -> listOf(derived, "last check: ${s.updateLastMessage}").filter { it.isNotEmpty() }.joinToString(" · ")
+            else -> derived.ifEmpty { s.updateLastMessage }
+        }
         updateStatus.setTextColor(col(if (ui.downloading) R.color.advisory else R.color.dim))
         updateInstallBtn.isEnabled = avail && !ui.downloading
         updateInstallBtn.alpha = if (updateInstallBtn.isEnabled) 1f else 0.4f

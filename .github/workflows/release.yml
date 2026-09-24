@@ -77,8 +77,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Pilot-facing notes (the in-app updater shows them) come from docs/release-notes/<tag>.md;
+          # without that file GitHub's generated notes are used.
           if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --title "Flight Deck Sentry ${TAG#v}" --generate-notes --verify-tag
+            if [ -f "docs/release-notes/$TAG.md" ]; then
+              gh release create "$TAG" --title "Flight Deck Sentry ${TAG#v}" --notes-file "docs/release-notes/$TAG.md" --verify-tag
+            else
+              gh release create "$TAG" --title "Flight Deck Sentry ${TAG#v}" --generate-notes --verify-tag
+            fi
           fi
           gh release upload "$TAG" flight-deck-sentry.apk flight-deck-sentry.apk.sha256 --clobber
 
