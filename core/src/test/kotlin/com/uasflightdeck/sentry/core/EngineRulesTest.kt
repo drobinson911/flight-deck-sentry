@@ -35,10 +35,10 @@ class EngineRulesTest {
     private fun sec(n: Int) = T0 + n * 1000L
 
     /**
-     * Callout cadence in controller mode, as implemented (v0.3.3 README "Callout cadence"): one entry callout,
-     * then the same aircraft at most every 20 s while it stays inside and isn't diverging, one "clear" on exit.
+     * Callout cadence in controller mode (v0.3.5 README "Alert cadence"): one entry callout, then the RANGE cadence
+     * (0.8 nm, not diverging = every 12 s) instead of a flat 20 s, one "clear" on exit.
      */
-    @Test fun cylinderCadenceEntryThenEvery20sThenClearOnce() {
+    @Test fun cylinderCadenceEntryThenRangeCadenceThenClearOnce() {
         val e = AlertEngine()
         val ctl = { t: Long -> own(t, src = OwnshipSource.CONTROLLER) }
         val cyl = Cylinder("ops", "ops area", 1.0, 0.0, 3000.0).toZone(O)
@@ -50,19 +50,21 @@ class EngineRulesTest {
         // then out to 1.5 nm (beyond the 0.2 nm exit hysteresis)
         for (i in 63..70) ev += e.s(sec(i), listOf(tgt(sec(i), 90.0, 1.5, geomFt = 8300.0)), listOf(cyl), o = ctl(sec(i))).events
         val spoken = ev.map { (it.timeMs - T0) / 1000 to it.kind }
-        assertEquals(listOf(3L to EventKind.CYLINDER_ENTRY, 23L to EventKind.PROXIMITY, 43L to EventKind.PROXIMITY, 63L to EventKind.CLEAR), spoken)
+        assertEquals(listOf(3L to EventKind.CYLINDER_ENTRY, 15L to EventKind.PROXIMITY, 27L to EventKind.PROXIMITY,
+            39L to EventKind.PROXIMITY, 51L to EventKind.PROXIMITY, 63L to EventKind.CLEAR), spoken)
         assertTrue(ev[0].text, ev[0].text.startsWith("Traffic entering ops area, N1234, east"))
         assertEquals(Severity.CAUTION, ev[1].severity)
-        assertEquals("N1234 clear.", ev[3].text)
+        assertEquals("N1234 clear.", ev[5].text)
     }
 
-    @Test fun ringsAndReannounceEvery20sForCaution() {
+    /** v0.3.5: 0.5-1 nm and not diverging = every 12 s (was a flat 20 s). */
+    @Test fun ringsAndReannounceEvery12sBetweenHalfAndOneMile() {
         val e = AlertEngine()
         e.s(sec(0), emptyList())                             // acquire
         val spoken = ArrayList<AlertEvent>()
         for (i in 1..45) spoken += e.s(sec(i), listOf(tgt(sec(i), 90.0, 0.8))).events
         val prox = spoken.filter { it.kind == EventKind.PROXIMITY }
-        assertEquals(listOf(sec(1), sec(21), sec(41)), prox.map { it.timeMs })
+        assertEquals(listOf(sec(1), sec(13), sec(25), sec(37)), prox.map { it.timeMs })
         assertTrue(prox.all { it.severity == Severity.CAUTION })
         assertTrue(prox[0].text.startsWith("Caution. Traffic, N1234, east, 4,900 feet, same altitude"))
     }
@@ -220,8 +222,10 @@ class EngineRulesTest {
         val e = AlertEngine()
         e.s(sec(0), emptyList())
         e.s(sec(1), listOf(tgt(sec(1), 0.0, 0.8, gs = 5.0, trk = 0.0)))       // caution, drifting away slowly
+        // v0.3.5: it was called inside 1 nm, so opening = one "passing, diverging", then nothing for 45 s
         val quiet = (2..30).flatMap { e.s(sec(it), listOf(tgt(sec(it), 0.0, 0.8, gs = 20.0, trk = 0.0))).events }
-        assertTrue(quiet.isEmpty())
+        assertEquals(listOf("N1234 passing, diverging."), quiet.map { it.text })
+        assertEquals(sec(2), quiet.single().timeMs)
         val back = e.s(sec(31), listOf(tgt(sec(31), 0.0, 0.8, gs = 20.0, trk = 180.0))).events
         assertEquals(Severity.CAUTION, back.single().severity)
         assertTrue(back.single().text.endsWith("converging."))

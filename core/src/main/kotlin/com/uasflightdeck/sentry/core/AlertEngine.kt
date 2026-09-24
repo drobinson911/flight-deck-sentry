@@ -63,6 +63,10 @@ class AlertEngine(
         val zoneInside = HashMap<String, Boolean>()
         val zoneLastAnnounceMs = HashMap<String, Long>()
         var seenThisStep = false
+        /** Called inside the caution ring, or with a predictive warning, since its last "clear". */
+        var closePass = false
+        /** "passing, diverging" said since it last converged. */
+        var passingSaid = false
     }
 
     private enum class OwnState { UNKNOWN, OK, LOST }
@@ -274,7 +278,7 @@ class AlertEngine(
                     zsev,
                     text = "Traffic $verb ${z.displayName}, ${describe(view, false)}.",
                     speech = "Traffic $verb ${z.spokenName}, ${describe(view, true)}.",
-                    hex = cur.hex,
+                    hex = cur.hex, distNm = distNm,
                 )
                 spokeForTarget = true
             }
@@ -282,33 +286,51 @@ class AlertEngine(
                 if (sev >= Severity.ADVISORY) {
                     if (sev > st.announced) st.announced = sev
                     st.lastAnnounceMs = nowMs
+                    if (distNm <= cfg.cautionNm || predictive) st.closePass = true
                 }
                 continue
             }
 
-            val interval = if (sev == Severity.ADVISORY) cfg.advisoryReannounceSec else cfg.reannounceSec
+            // ── cadence (v0.3.5, [Cadence]) ────────────────────────────────
+            if (trend == Trend.CONVERGING) st.passingSaid = false
+            fun spoke(ev: AlertEvent) {
+                events += ev
+                st.lastAnnounceMs = nowMs
+                if (distNm <= cfg.cautionNm || predictive) st.closePass = true
+            }
             when {
+                // Escalation is spoken at once, whatever the timer says.
                 sev >= Severity.ADVISORY && sev > st.announced -> {
-                    events += proximityEvent(nowMs, view)
-                    st.announced = sev; st.lastAnnounceMs = nowMs
+                    spoke(proximityEvent(nowMs, view, short = false))
+                    st.announced = sev
                 }
-                sev >= Severity.ADVISORY && sev == st.announced &&
-                    nowMs - st.lastAnnounceMs >= interval * 1000 && trend != Trend.DIVERGING -> {
-                    // A target already moving away is not re-announced every 20 s;
-                    // it gets its "clear" when it leaves the rings.
-                    events += proximityEvent(nowMs, view)
-                    st.lastAnnounceMs = nowMs
+                // Opening after a close pass: said once, then the 45 s cadence.
+                sev >= Severity.ADVISORY && trend == Trend.DIVERGING && st.closePass && !st.passingSaid -> {
+                    st.announced = sev
+                    st.passingSaid = true
+                    spoke(AlertEvent(nowMs, EventKind.PASSING, Severity.ADVISORY,
+                        text = "${cur.displayId} passing, diverging.",
+                        speech = "${Phrasing.spelledId(cur.displayId)} passing, diverging.",
+                        hex = cur.hex, distNm = distNm))
                 }
-                sev >= Severity.ADVISORY && sev < st.announced -> st.announced = sev  // silent de-escalation
+                sev >= Severity.ADVISORY -> {
+                    st.announced = sev                                   // de-escalation is silent
+                    val band = Cadence.band(sev, distNm, trend, cpa?.tSec, cpa?.let { Units.mToNm(it.distM) },
+                        st.passingSaid, cfg)
+                    val every = Cadence.intervalSec(band, cfg)
+                    if (every != null && nowMs - st.lastAnnounceMs >= every * 1000)
+                        spoke(proximityEvent(nowMs, view, short = band.short))
+                }
                 sev == Severity.NONE && st.announced >= Severity.ADVISORY -> {
                     val tail = if (trend == Trend.DIVERGING) ", diverging" else ""
                     events += AlertEvent(
                         nowMs, EventKind.CLEAR, Severity.INFO,
                         text = "${cur.displayId} clear$tail.",
                         speech = "${Phrasing.spelledId(cur.displayId)} clear$tail.",
-                        hex = cur.hex,
+                        hex = cur.hex, distNm = distNm,
                     )
                     st.announced = Severity.NONE
+                    st.closePass = false; st.passingSaid = false
                 }
             }
         }
@@ -330,7 +352,8 @@ class AlertEngine(
 
         views.sortBy { it.distNm }
         return StepResult(
-            events = events.sortedByDescending { it.severity.rank },
+            // Most severe first; at the same severity the closer aircraft first.
+            events = events.sortedWith(compareByDescending<AlertEvent> { it.severity.rank }.thenBy { it.distNm ?: Double.MAX_VALUE }),
             targets = views,
             ownshipFresh = ownFresh,
             ownshipAgeSec = ownAge,
@@ -503,7 +526,25 @@ class AlertEngine(
         return "$id, $dir, $dist, $vert$trend"
     }
 
-    private fun proximityEvent(nowMs: Long, v: TargetView): AlertEvent {
+    /**
+     * The full sentence, or (the 6 s close band) the SHORT one with no severity word and no CPA:
+     * "Traffic, N388KM, west, 1,500 feet, 200 below, closing."
+     */
+    private fun proximityEvent(nowMs: Long, v: TargetView, short: Boolean): AlertEvent {
+        if (short) {
+            fun body(speech: Boolean): String {
+                val id = if (speech) Phrasing.spelledId(v.displayId) else v.displayId
+                val trend = when (v.trend) {
+                    Trend.CONVERGING -> ", closing"
+                    null -> ""
+                    else -> ", ${v.trend.word}"
+                }
+                return "Traffic, $id, ${Geo.cardinalWord(v.bearingDeg)}, ${Phrasing.spokenDistance(v.distNm)}, " +
+                    "${Phrasing.spokenVertical(v.dvFt)}$trend."
+            }
+            return AlertEvent(nowMs, EventKind.PROXIMITY, v.severity, text = body(false), speech = body(true),
+                hex = v.hex, distNm = v.distNm)
+        }
         val prefix = when (v.severity) {
             Severity.WARNING -> "Warning. Traffic, "
             Severity.CAUTION -> "Caution. Traffic, "
@@ -514,11 +555,11 @@ class AlertEngine(
             val tail = "closest ${Phrasing.spokenDistance(cpaNm)} in ${Phrasing.seconds(v.cpa.tSec)}"
             return AlertEvent(nowMs, EventKind.PREDICTIVE, Severity.WARNING,
                 text = "${prefix}${describe(v, false)}, $tail.",
-                speech = "${prefix}${describe(v, true)}, $tail.", hex = v.hex)
+                speech = "${prefix}${describe(v, true)}, $tail.", hex = v.hex, distNm = v.distNm)
         }
         return AlertEvent(nowMs, EventKind.PROXIMITY, v.severity,
             text = "${prefix}${describe(v, false)}.",
-            speech = "${prefix}${describe(v, true)}.", hex = v.hex)
+            speech = "${prefix}${describe(v, true)}.", hex = v.hex, distNm = v.distNm)
     }
 
     companion object {

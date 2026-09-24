@@ -1,0 +1,54 @@
+--------- beginning of system
+--------- beginning of main
+09-24 16:21:42.643 I/Sentry  ( 9514): Update check: Up to date
+09-24 16:21:46.415 I/Sentry  ( 9514): Service created
+09-24 16:21:46.416 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 1, engines=0); bundled voice not loaded
+09-24 16:21:46.504 I/Sentry  ( 9514): Voice: bundled voice ready in 91 ms (256 clips; decoding the rest now)
+09-24 16:21:46.586 I/Sentry  ( 9514): REPLAY start: Demo encounter: DEMO-1 vs N388KM at 1.0x
+09-24 16:21:46.597 I/Sentry  ( 9514): Controller GPS listening
+09-24 16:21:46.886 I/Sentry  ( 9514): SPEAK[bundled] [info] Replay starting
+09-24 16:21:46.965 I/Sentry  ( 9514): CLIPVOICE 972 ms: replay_starting@0
+09-24 16:21:51.419 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 2, engines=0); bundled voice in use
+09-24 16:21:51.597 I/Sentry  ( 9514): CALLOUT[replay] 11:51:55 PDT INFO SELECTION: No aircraft pinned. Protecting this controller.
+09-24 16:21:51.887 I/Sentry  ( 9514): SPEAK[bundled] [info] No aircraft pinned. Protecting this controller.
+09-24 16:21:52.148 I/Sentry  ( 9514): CLIPVOICE 2549 ms: no_aircraft_pinned@0 . protecting_this_controller@1379
+09-24 16:22:00.666 I/Sentry  ( 9514): Voice: bundled voice decoded 256/256 clips in 14254 ms
+09-24 16:22:01.422 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 3, engines=0); bundled voice in use
+09-24 16:22:16.424 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 4, engines=0); bundled voice in use
+09-24 16:22:36.426 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 5, engines=0); bundled voice in use
+09-24 16:22:52.652 I/Sentry  ( 9514): CALLOUT[replay] 11:52:56 PDT CAUTION CYLINDER_ENTRY: Traffic entering advisory area, N388KM, southwest, 3.0 miles, 2,800 above, converging.
+09-24 16:22:53.191 I/Sentry  ( 9514): SPEAK[bundled] [caution] Traffic entering advisory area, N 3 8 8 K M, southwest, 3.0 miles, 2,800 above, converging.
+09-24 16:22:53.198 I/Sentry  ( 9514): CLIPVOICE 11059 ms: traffic@0 entering@551 advisory_area@1125 , l_n@2323 n3@2728 n8@3202 n8@3632 l_k@4062 l_m@4485 , southwest@5352 , n3@6246 point@6720 n0@7184 miles@7734 , t2@8382 h8@9114 above@9800 , converging@10406
+09-24 16:22:59.652 I/Sentry  ( 9514): CALLOUT[replay] 11:53:03 PDT WARNING PREDICTIVE: Warning. Traffic, N388KM, southwest, 2.6 miles, 2,700 above, converging, closest 2,500 feet in 52 seconds.
+09-24 16:23:01.450 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 6, engines=0); bundled voice in use
+09-24 16:23:05.096 I/Sentry  ( 9514): SPEAK[bundled] [warning] Warning. Traffic, N 3 8 8 K M, southwest, 2.6 miles, 2,700 above, converging, closest 2,500 feet in 52 seconds.
+09-24 16:23:05.101 I/Sentry  ( 9514): CLIPVOICE 14588 ms: warning@0 . traffic@626 , l_n@1237 n3@1642 n8@2116 n8@2546 l_k@2976 l_m@3399 , southwest@4266 , n2@5160 point@5580 n6@6044 miles@6555 , t2@7203 h7@7935 above@8766 , converging@9372 , closest@10085 t2@10690 h5@11422 feet@12176 in@12671 n52@13083 seconds@13959
+09-24 16:23:19.668 I/Sentry  ( 9514): CALLOUT[replay] 11:53:23 PDT WARNING TFR_ENTRY: Traffic entering TFR 0/0000, N388KM, southwest, 1.8 miles, 2,700 above, converging.
+09-24 16:23:20.516 I/Sentry  ( 9514): SPEAK[bundled] [warning] Traffic entering TFR 0 0000, N 3 8 8 K M, southwest, 1.8 miles, 2,700 above, converging.
+09-24 16:23:20.518 I/Sentry  ( 9514): CLIPVOICE 13124 ms: traffic@0 entering@551 tfr@1125 n6@1954 n5@2465 n0@2991 n2@3541 n1@3961 , l_n@4429 n3@4834 n8@5308 n8@5738 l_k@6168 l_m@6591 , southwest@7458 , n1@8352 point@8760 n8@9224 miles@9654 , t2@10302 h7@11034 above@11865 , converging@12471
+09-24 16:23:31.453 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 7, engines=0); bundled voice in use
+09-24 16:23:33.676 I/Sentry  ( 9514): CALLOUT[replay] 11:53:37 PDT WARNING PROXIMITY: Traffic, N388KM, south, 1.1 miles, 2,700 above, closing.
+09-24 16:23:34.485 I/Sentry  ( 9514): SPEAK[bundled] [warning] Traffic, N 3 8 8 K M, south, 1.1 miles, 2,700 above, closing.
+09-24 16:23:34.488 I/Sentry  ( 9514): CLIPVOICE 8882 ms: traffic@0 , l_n@611 n3@1016 n8@1490 n8@1920 l_k@2350 l_m@2773 , south@3640 , n1@4219 point@4627 n1@5091 miles@5499 , t2@6147 h7@6879 above@7710 , closing@8316
+09-24 16:23:39.680 I/Sentry  ( 9514): CALLOUT[replay] 11:53:43 PDT WARNING PROXIMITY: Traffic, N388KM, south, 5,500 feet, 2,700 above, closing.
+09-24 16:23:44.215 I/Sentry  ( 9514): SPEAK[bundled] [warning] Traffic, N 3 8 8 K M, south, 5,500 feet, 2,700 above, closing.
+09-24 16:23:44.218 I/Sentry  ( 9514): CLIPVOICE 9087 ms: traffic@0 , l_n@611 n3@1016 n8@1490 n8@1920 l_k@2350 l_m@2773 , south@3640 , t5@4219 h5@5043 feet@5797 , t2@6352 h7@7084 above@7915 , closing@8521
+09-24 16:23:45.687 I/Sentry  ( 9514): CALLOUT[replay] 11:53:49 PDT WARNING PROXIMITY: Traffic, N388KM, south, 3,900 feet, 2,700 above, closing.
+09-24 16:23:51.688 I/Sentry  ( 9514): CALLOUT[replay] 11:53:55 PDT WARNING PROXIMITY: Traffic, N388KM, south, 2,400 feet, 2,600 above, closing.
+09-24 16:23:54.117 I/Sentry  ( 9514): SPEAK[bundled] [warning] Traffic, N 3 8 8 K M, south, 2,400 feet, 2,600 above, closing.
+09-24 16:23:54.119 I/Sentry  ( 9514): CLIPVOICE 8942 ms: traffic@0 , l_n@611 n3@1016 n8@1490 n8@1920 l_k@2350 l_m@2773 , south@3640 , t2@4219 h4@4951 feet@5732 , t2@6287 h6@7019 above@7770 , closing@8376
+09-24 16:23:57.694 I/Sentry  ( 9514): CALLOUT[replay] 11:54:01 PDT WARNING PROXIMITY: Traffic, N388KM, southeast, 1,400 feet, 2,600 above, closing.
+09-24 16:23:59.693 I/Sentry  ( 9514): CALLOUT[replay] 11:54:03 PDT ADVISORY PASSING: N388KM passing, diverging.
+09-24 16:24:03.394 I/Sentry  ( 9514): SPEAK[bundled] [advisory] N 3 8 8 K M passing, diverging.
+09-24 16:24:03.398 I/Sentry  ( 9514): CLIPVOICE 4310 ms: l_n@0 n3@405 n8@879 n8@1309 l_k@1739 l_m@2162 passing_diverging@2969
+09-24 16:24:06.458 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 8, engines=0); bundled voice in use
+09-24 16:24:44.726 I/Sentry  ( 9514): CALLOUT[replay] 11:54:48 PDT CAUTION PROXIMITY: Caution. Traffic, N388KM, northeast, 2.1 miles, 2,300 above, diverging.
+09-24 16:24:45.267 I/Sentry  ( 9514): SPEAK[bundled] [caution] Caution. Traffic, N 3 8 8 K M, northeast, 2.1 miles, 2,300 above, diverging.
+09-24 16:24:45.268 I/Sentry  ( 9514): CLIPVOICE 9943 ms: caution@0 . traffic@713 , l_n@1324 n3@1729 n8@2203 n8@2633 l_k@3063 l_m@3486 , northeast@4353 , n2@5159 point@5579 n1@6043 miles@6451 , t2@7099 h3@7831 above@8585 , diverging@9191
+09-24 16:24:46.484 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 9, engines=0); bundled voice in use
+09-24 16:25:05.744 I/Sentry  ( 9514): CALLOUT[replay] 11:55:09 PDT INFO CLEAR: N388KM clear, diverging.
+09-24 16:25:06.037 I/Sentry  ( 9514): SPEAK[bundled] [info] N 3 8 8 K M clear, diverging.
+09-24 16:25:06.038 I/Sentry  ( 9514): CLIPVOICE 4107 ms: l_n@0 n3@405 n8@879 n8@1309 l_k@1739 l_m@2162 clear_diverging@2969
+09-24 16:25:27.764 I/Sentry  ( 9514): REPLAY finished
+09-24 16:25:31.487 I/Sentry  ( 9514): Voice: TTS init failed status=-1 (attempt 10, engines=0); bundled voice in use
+09-24 16:25:35.775 I/Sentry  ( 9514): Service destroyed (mode=OFF)

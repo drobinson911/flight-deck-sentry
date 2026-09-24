@@ -9,9 +9,13 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.uasflightdeck.sentry.core.AlertEvent
+import com.uasflightdeck.sentry.core.CalloutQueue
 import com.uasflightdeck.sentry.core.Severity
+import com.uasflightdeck.sentry.core.VoicePolicy
+import com.uasflightdeck.sentry.core.VoicePolicy.Engine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -22,18 +26,20 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Tone + speech for every callout.
+ * Tone + speech for every callout, through TWO stacked voices (v0.3.5):
  *
- * - Audio attributes USAGE_ASSISTANCE_NAVIGATION_GUIDANCE and focus
- *   AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK (never GAIN), requested for ONE callout
- *   (tone + words) and released as soon as it is spoken, so DroneSense's audio
- *   ducks only while Sentry is actually talking. No media session.
+ *  1. the device's text-to-speech engine, when one is installed and ready;
+ *  2. Sentry's own bundled voice ([ClipVoice]), always loaded. The DJI RC Plus ships with NO TTS engine.
+ *
+ * TTS is used while it works. If it is missing, never initialises, or fails on a callout (speak() error, onError,
+ * no start within 3 s, or no finish in time), that callout is spoken by the bundled voice at once and the bundled voice stays in
+ * charge ("sticky") until TTS is tried again [TTS_RETRY_MS] later. [status] always names the voice in use.
+ *
+ * - Audio attributes USAGE_ASSISTANCE_NAVIGATION_GUIDANCE and focus AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK (never
+ *   GAIN), requested for ONE callout (tone + words) and released right after it. No media session.
  * - A distinct tone per severity plays BEFORE the words.
- * - Queue is priority-ordered, one pending item per aircraft (a newer callout
- *   about N388KM replaces an unspoken older one), and anything older than
- *   15 s is dropped rather than spoken late — stale speech is wrong speech.
- * - If TTS is unavailable, tones still play, the heads-up notification still
- *   posts, and the UI shows VOICE UNAVAILABLE in red.
+ * - Queue ([CalloutQueue]): one waiting item per aircraft, most severe first, closer aircraft first, anything
+ *   that waited more than 15 s is dropped (stale speech is wrong speech).
  */
 class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : TextToSpeech.OnInitListener {
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -46,59 +52,103 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
         .setOnAudioFocusChangeListener { }
         .build()
 
+    private val policy = VoicePolicy(TTS_RETRY_MS)
+
+    private val clips = ClipVoice(ctx, attrs)
     @Volatile private var tts: TextToSpeech? = null
-    @Volatile var ready = false; private set
-    @Volatile var status = "starting"; private set
+    @Volatile private var ttsReady = false
+    @Volatile private var ttsLabel = "TTS"
+    @Volatile private var ttsState = "starting"
+    /** Debug / test: pretend there is no TTS engine (the RC Plus case). */
+    @Volatile var forceBundled = false
+
     @Volatile var enabled = true
     @Volatile var volume = 1.0f
 
-    private data class Item(val ev: AlertEvent, val enqueuedMs: Long)
-    private val pending = ArrayList<Item>()
+    /** Which voice the next callout will use. */
+    val engine: Engine
+        get() = synchronized(policy) {
+            policy.choose(System.currentTimeMillis(), ttsReady && tts != null, clips.ready, forceBundled)
+        }
+    val ready: Boolean get() = engine != Engine.NONE
+    /** For the Voice row: "Google TTS", "bundled voice", or why there is none. */
+    val status: String
+        get() = when (engine) {
+            Engine.TTS -> ttsLabel
+            Engine.BUNDLED -> "bundled voice"
+            Engine.NONE -> if (clips.status == "not loaded") "loading voice" else "${clips.status}; TTS $ttsState"
+        }
+
+    private val queue = CalloutQueue()
     private val signal = Channel<Unit>(Channel.CONFLATED)
-    private val done = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+    private val done = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+    private val started = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private var worker: Job? = null
     private var initAttempts = 0
 
     fun start() {
+        scope.launch(Dispatchers.IO) { clips.load(); signal.trySend(Unit) }
         initTts()
         worker = scope.launch { loop() }
     }
 
     private fun initTts() {
         initAttempts++
-        status = "starting"
-        tts = TextToSpeech(ctx.applicationContext, this)
+        ttsState = "starting"
+        tts = try { TextToSpeech(ctx.applicationContext, this) } catch (e: Exception) {
+            SentryBus.log("Voice: TTS unavailable: $e"); ttsState = "unavailable"; scheduleTtsRetry(); null
+        }
     }
 
+    private fun scheduleTtsRetry() {
+        // auto-regain: engines can come up late after boot, or be installed later. The bundled voice covers meanwhile.
+        scope.launch { delay(minOf(TTS_RETRY_MS, 5_000L * initAttempts)); runCatching { tts?.shutdown() }; tts = null; initTts() }
+    }
+
+    /**
+     * With no engine installed (the RC Plus), Android calls this with ERROR from INSIDE the TextToSpeech
+     * constructor, before [tts] is assigned. So the result is handled on the scope, once the constructor returned.
+     */
     override fun onInit(st: Int) {
-        val t = tts ?: return
-        if (st != TextToSpeech.SUCCESS) {
-            ready = false; status = "TTS init failed ($st)"
-            SentryBus.log("Voice: TTS init failed status=$st (attempt $initAttempts)")
-            // auto-regain: retry with backoff (engines can come up late after boot)
-            scope.launch { delay(minOf(60_000L, 5_000L * initAttempts)); runCatching { t.shutdown() }; initTts() }
+        scope.launch {
+            var waited = 0
+            while (tts == null && waited < 2000) { delay(20); waited += 20 }
+            handleInit(st)
+        }
+    }
+
+    private fun handleInit(st: Int) {
+        val t = tts
+        if (st != TextToSpeech.SUCCESS || t == null) {
+            ttsReady = false; ttsState = if (st == TextToSpeech.SUCCESS) "lost" else "no engine / init failed ($st)"
+            SentryBus.log("Voice: TTS init failed status=$st (attempt $initAttempts, engines=${runCatching { t?.engines?.size }.getOrNull() ?: -1}); " +
+                "bundled voice ${if (clips.ready) "in use" else clips.status}")
+            scheduleTtsRetry()
             return
         }
         t.setAudioAttributes(attrs)
         val lr = t.setLanguage(Locale.US)
         t.setSpeechRate(1.05f)
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {}
-            override fun onDone(id: String?) { id?.let { done.remove(it)?.complete(Unit) } }
-            @Deprecated("deprecated in API") override fun onError(id: String?) { id?.let { done.remove(it)?.complete(Unit) } }
-            override fun onError(id: String?, errorCode: Int) { id?.let { done.remove(it)?.complete(Unit) } }
+            override fun onStart(id: String?) { id?.let { started.remove(it)?.complete(Unit) } }
+            override fun onDone(id: String?) { id?.let { done.remove(it)?.complete(true) } }
+            @Deprecated("deprecated in API") override fun onError(id: String?) { id?.let { done.remove(it)?.complete(false) } }
+            override fun onError(id: String?, errorCode: Int) { id?.let { done.remove(it)?.complete(false) } }
         })
-        ready = lr != TextToSpeech.LANG_MISSING_DATA && lr != TextToSpeech.LANG_NOT_SUPPORTED
-        status = if (ready) "ready (${t.defaultEngine ?: "tts"})" else "no US English voice"
-        SentryBus.log("Voice: TTS $status")
+        ttsReady = lr != TextToSpeech.LANG_MISSING_DATA && lr != TextToSpeech.LANG_NOT_SUPPORTED
+        val eng = t.defaultEngine ?: "tts"
+        ttsLabel = when {
+            eng == "com.google.android.tts" -> "Google TTS"
+            eng.contains("pico") -> "Pico TTS"
+            else -> "TTS $eng"
+        }
+        ttsState = if (ttsReady) "ready ($eng)" else "no US English voice"
+        SentryBus.log("Voice: TTS $ttsState")
+        if (!ttsReady) scheduleTtsRetry()
     }
 
     fun say(ev: AlertEvent) {
-        synchronized(pending) {
-            if (ev.hex != null) pending.removeAll { it.ev.hex == ev.hex }
-            pending += Item(ev, System.currentTimeMillis())
-            pending.sortByDescending { it.ev.severity.rank }
-        }
+        synchronized(queue) { queue.offer(ev, System.currentTimeMillis()) }
         signal.trySend(Unit)
     }
 
@@ -106,11 +156,9 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
         while (true) {
             signal.receive()
             while (true) {
-                val item = synchronized(pending) { if (pending.isEmpty()) null else pending.removeAt(0) } ?: break
-                if (System.currentTimeMillis() - item.enqueuedMs > 15_000) {
-                    SentryBus.log("Voice: dropped stale callout: ${item.ev.text}")
-                    continue
-                }
+                val item = synchronized(queue) {
+                    queue.poll(System.currentTimeMillis()) { SentryBus.log("Voice: dropped stale callout: ${it.ev.text}") }
+                } ?: break
                 if (!enabled) { SentryBus.log("MUTED [${item.ev.severity.label}] ${item.ev.speech}"); continue }
                 // Ducking is best-effort: we speak even if focus is refused. Focus is held for this one
                 // callout only and released right after it, never across the queue.
@@ -144,24 +192,52 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
     }
 
     private suspend fun speak(ev: AlertEvent) {
-        SentryBus.log("SPEAK [${ev.severity.label}] ${ev.speech}")
-        // First callout after arming can beat TTS init by a few hundred ms: wait briefly.
+        // First callout after arming can beat TTS init / clip decoding by a moment: wait briefly for EITHER voice.
         var waited = 0
         while (!ready && waited < 6000) { delay(200); waited += 200 }
-        val t = tts
-        if (t == null || !ready) { SentryBus.log("Voice: TTS not ready ($status); text only"); return }
+        val via = engine
+        SentryBus.log("SPEAK[${via.name.lowercase()}] [${ev.severity.label}] ${ev.speech}")
+        when (via) {
+            Engine.TTS -> if (!speakTts(ev)) {
+                synchronized(policy) { policy.ttsFailed(System.currentTimeMillis()) }
+                SentryBus.log("Voice: TTS failed on a callout; bundled voice takes over (TTS retried in ${TTS_RETRY_MS / 1000} s)")
+                if (!clips.speak(ev.speech, volume)) SentryBus.log("Voice: bundled voice also failed; tone + notification only")
+            }
+            Engine.BUNDLED -> if (!clips.speak(ev.speech, volume)) SentryBus.log("Voice: bundled voice failed; tone + notification only")
+            Engine.NONE -> SentryBus.log("Voice: no voice ($status); tone + notification only")
+        }
+    }
+
+    /** true = the engine reported the utterance done. */
+    private suspend fun speakTts(ev: AlertEvent): Boolean {
+        val t = tts ?: return false
         val id = UUID.randomUUID().toString()
-        val d = CompletableDeferred<Unit>()
+        val d = CompletableDeferred<Boolean>()
+        val s0 = CompletableDeferred<Unit>()
         done[id] = d
+        started[id] = s0
         val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume.coerceIn(0f, 1f)) }
-        val r = t.speak(ev.speech, TextToSpeech.QUEUE_ADD, params, id)
-        if (r != TextToSpeech.SUCCESS) { done.remove(id); SentryBus.log("Voice: speak() returned $r"); return }
-        withTimeoutOrNull(15_000) { d.await() } ?: run { done.remove(id); SentryBus.log("Voice: utterance timeout") }
+        val r = try { t.speak(ev.speech, TextToSpeech.QUEUE_ADD, params, id) } catch (e: Exception) { TextToSpeech.ERROR }
+        if (r != TextToSpeech.SUCCESS) { done.remove(id); started.remove(id); SentryBus.log("Voice: TTS speak() returned $r"); return false }
+        // A dead engine says nothing at all (no onError): fail over fast. It must START within 3 s, and finish within
+        // 3 s + 90 ms per character (a 110-character warning: 12.9 s; Google TTS takes about 7 s), capped at 15 s.
+        val fail = { why: String -> done.remove(id); started.remove(id); runCatching { t.stop() }; SentryBus.log("Voice: TTS $why"); false }
+        if (withTimeoutOrNull(3_000) { s0.await() } == null && !d.isCompleted) return fail("did not start within 3 s")
+        val limit = minOf(15_000L, 3_000L + 90L * ev.speech.length)
+        val ok = withTimeoutOrNull(limit) { d.await() } ?: return fail("utterance not finished within ${limit / 1000.0} s")
+        started.remove(id)
+        if (!ok) SentryBus.log("Voice: TTS reported an error on the utterance")
+        return ok
     }
 
     fun shutdown() {
         worker?.cancel()
         runCatching { tts?.stop(); tts?.shutdown() }
-        tts = null; ready = false; status = "stopped"
+        tts = null; ttsReady = false; ttsState = "stopped"
+    }
+
+    companion object {
+        /** After TTS fails, the bundled voice is used for this long before TTS is tried again. */
+        const val TTS_RETRY_MS = 5 * 60_000L
     }
 }

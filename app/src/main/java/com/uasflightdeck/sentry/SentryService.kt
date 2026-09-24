@@ -18,6 +18,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.uasflightdeck.sentry.core.AlertEngine
 import com.uasflightdeck.sentry.core.AlertEvent
+import com.uasflightdeck.sentry.core.SystemPhrases
 import com.uasflightdeck.sentry.core.ControllerFix
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SelectionMode
@@ -73,6 +74,7 @@ class SentryService : Service() {
         const val ACTION_REPLAY = "com.uasflightdeck.sentry.REPLAY"
         const val ACTION_REPLAY_STOP = "com.uasflightdeck.sentry.REPLAY_STOP"
         const val ACTION_TEST = "com.uasflightdeck.sentry.TEST"
+        const val ACTION_VOICE_TEST = "com.uasflightdeck.sentry.VOICE_TEST"
         const val EXTRA_SPEED = "speed"
         const val EXTRA_CLOUD_VIEW = "cloudView"
 
@@ -128,10 +130,8 @@ class SentryService : Service() {
         super.onCreate()
         settings = Settings(this)
         voice = AlertVoice(this, scope).also { it.start() }
-        health.register("fleet", "Drone feed", 10.0)
-        health.register("station", "Station link", 10.0)
-        health.register("cloud", "Cloud traffic", 20.0)
-        health.register("tfr", "T F R data", 45 * 60.0)
+        val lostAfter = mapOf("fleet" to 10.0, "station" to 10.0, "cloud" to 20.0, "tfr" to 45 * 60.0)
+        SystemPhrases.HEALTH_SOURCES.forEach { (k, spoken) -> health.register(k, spoken, lostAfter.getValue(k)) }
         SentryBus.log("Service created")
     }
 
@@ -145,8 +145,14 @@ class SentryService : Service() {
             ACTION_REPLAY_STOP -> stopReplay("stopped")
             ACTION_TEST -> {
                 dispatch(AlertEvent(System.currentTimeMillis(), EventKind.TEST, Severity.WARNING,
-                    text = "Test callout. Traffic, N388KM, southwest, 1,500 feet, 300 below, converging.",
-                    speech = "Test callout. Traffic, N 3 8 8 K M, southwest, 1,500 feet, 300 below, converging."), "test")
+                    text = SystemPhrases.TEST_TEXT, speech = SystemPhrases.TEST_SPEECH), "test")
+                if (mode == Mode.OFF) scope.launch { delay(15_000); if (mode == Mode.OFF) stopSelfCleanly() }
+            }
+            ACTION_VOICE_TEST -> {
+                syncVoice()
+                SentryBus.log("Voice test through ${voice.engine} (${voice.status})")
+                dispatch(AlertEvent(System.currentTimeMillis(), EventKind.TEST, Severity.WARNING,
+                    text = SystemPhrases.VOICE_TEST_TEXT, speech = SystemPhrases.VOICE_TEST_SPEECH), "voice-test")
                 if (mode == Mode.OFF) scope.launch { delay(15_000); if (mode == Mode.OFF) stopSelfCleanly() }
             }
             null -> {   // sticky restart after process death
@@ -183,7 +189,7 @@ class SentryService : Service() {
         startWatchdog()
         SentryBus.log("ARMED (live)")
         Updater.check(this)   // daily at most; quiet when offline or rate-limited
-        dispatch(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, "Sentry armed"), "live")
+        dispatch(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, SystemPhrases.ARMED), "live")
     }
 
     private fun disarm() {
@@ -191,7 +197,7 @@ class SentryService : Service() {
         replayJob?.cancel(); replayJob = null
         stopLiveJobs()
         mode = Mode.OFF
-        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, "Sentry disarmed"))
+        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemPhrases.DISARMED))
         publishOff()
         scope.launch { delay(4000); if (mode == Mode.OFF) stopSelfCleanly() }
     }
@@ -435,9 +441,14 @@ class SentryService : Service() {
 
     private fun syncSettings() {
         engine.config = settings.engineConfig()
+        syncVoice()
+        startGps()   // always: the controller is the fallback protected position
+    }
+
+    private fun syncVoice() {
         voice.enabled = settings.voiceOn
         voice.volume = settings.volume.toFloat()
-        startGps()   // always: the controller is the fallback protected position
+        voice.forceBundled = BuildConfig.DEBUG && settings.voiceForceBundled
     }
 
     private fun trafficAgeSec(now: Long): Double {
@@ -483,7 +494,7 @@ class SentryService : Service() {
         val eng = AlertEngine(settings.engineConfig(), externalSelection = true)
         val sel = DroneSelector(settings.selectorConfig())
         SentryBus.log("REPLAY start: ${sc.title} at ${sp}x")
-        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, "Replay starting"))
+        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemPhrases.REPLAY_STARTING))
         if (tickJob == null) startTickLoop()
         replayJob = scope.launch {
             var t = sc.startMs

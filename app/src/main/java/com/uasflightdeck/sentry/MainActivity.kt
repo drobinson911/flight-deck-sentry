@@ -146,6 +146,7 @@ class MainActivity : AppCompatActivity() {
                 it.putExtra(SentryService.EXTRA_CLOUD_VIEW, i.getBooleanExtra("cloud_view", false))
             }
             "test" -> SentryService.send(this, SentryService.ACTION_TEST)
+            "voice_test" -> SentryService.send(this, SentryService.ACTION_VOICE_TEST)
             // --es station_url http://10.0.2.2:18080 --ez station true
             // --es pinned 1581F7K3C251F00C9B34 --es worker http://10.0.2.2:18081
             // --ef elev 5100 (controller elevation override; NaN clears it)
@@ -155,6 +156,8 @@ class MainActivity : AppCompatActivity() {
                 i.getStringExtra("pinned")?.let { settings.pinnedSerial = it }
                 i.getStringExtra("worker")?.let { settings.workerBase = it }
                 if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
+                // --ez force_bundled true: skip TTS, use the bundled voice (what the RC Plus does, having no TTS engine)
+                if (i.hasExtra("force_bundled")) settings.voiceForceBundled = i.getBooleanExtra("force_bundled", false)
             }
         }
         i.removeExtra("sentry_action")
@@ -341,9 +344,14 @@ class MainActivity : AppCompatActivity() {
             sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).tail(21, "starts when armed", col(R.color.dim), sc)
             sb.add("\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
         } else {
-            val vl = if (st.voiceOk) "OK     " else "UNAVAILABLE "
-            sb.add("Voice".padEnd(14), col(R.color.ink)).add(vl, col(if (st.voiceOk) R.color.ok else R.color.warning), true)
-                .tail(14 + vl.length, st.voice.replace("com.google.android.tts", "Google").take(20), col(R.color.dim), sc)
+            // v0.3.5: which voice is speaking, "OK (bundled voice)" / "OK (Google TTS)"; never "unavailable" while
+            // the bundled clip bank is loaded (AlertVoice falls back to it whenever TTS is missing or fails).
+            if (st.voiceOk) sb.add("Voice".padEnd(14), col(R.color.ink)).add("OK (${st.voice})\n", col(R.color.ok), true)
+            else {
+                val vl = if (st.voice == "muted in Settings") "MUTED  " else "UNAVAILABLE "
+                sb.add("Voice".padEnd(14), col(R.color.ink)).add(vl, col(R.color.warning), true)
+                    .tail(14 + vl.length, st.voice.take(24), col(R.color.dim), sc)
+            }
         }
         sources.text = sb
 

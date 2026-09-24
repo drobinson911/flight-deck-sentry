@@ -57,6 +57,8 @@ class Settings(ctx: Context) {
     // voice
     var voiceOn by bool("voiceOn", true)
     var volume by dbl("volume", 1.0)
+    /** Debug builds / tests: skip TTS and use the bundled voice, as on the DJI RC Plus (no TTS engine). */
+    var voiceForceBundled by bool("voiceForceBundled", false)
 
     // controller protection (when this controller's aircraft is not in the feed, or none is pinned)
     var cylinders: List<Cylinder>

@@ -43,8 +43,10 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
   `START_STICKY`; after a sticky restart it re-arms from the saved "armed" flag. Re-arming
   after boot or an app update is opt-in. Sentry asks for a battery-optimisation exemption
   when it is first armed.
-- **Voice:** if TTS init fails, it retries with backoff. If TTS stays unavailable, the tones
-  still play and the heads-up banners still post, and the UI shows VOICE UNAVAILABLE in red.
+- **Voice (v0.3.5):** two voices, stacked: the device's TTS engine when it has one and it works, and Sentry's
+  own bundled clip voice, always loaded. The DJI RC Plus has no TTS engine at all. A TTS failure on a callout
+  switches to the bundled voice for that same callout, and TTS is retried 5 minutes later. Tones and heads-up
+  banners work whichever voice is speaking. See "Sentry's own voice" below.
 
 ## Truthfulness (the UI never shows a state that isn't true)
 
@@ -382,6 +384,69 @@ dismisses?"
   keyboard (`mInputShown=false`); a lower-case serial was stored upper-case, and the running service (same PID, not
   restarted) logged `bound to 1581DEMO0001`, then `bound to nothing` after Clear.
 
+## v0.3.5 (2026-09-24): Sentry's own voice, adaptive callout cadence
+
+### Sentry's own voice (the RC Plus has no text-to-speech)
+
+The RC Plus runs DJI's stripped Android 10 with no TTS engine and no Google services, so `TextToSpeech` never
+initialised and 0.3.4 said "Voice unavailable" (tones and banners only). Per the reliability law the answer is
+stacking, not replacing: TTS stays first choice, and a bundled voice is always there underneath it.
+
+- **The bank.** `tools/voicebank/gen.py` renders `tools/voicebank/phrases.txt` offline with **Piper**
+  (`piper-tts`, the OHF-Voice build) and the voice **en_US-kristin-medium**. That voice was trained from scratch on
+  LibriVox recordings, which are **public domain** (model card: rhasspy/piper-voices). We ruled out the usual
+  `lessac` voice and the voices fine-tuned from it: the Blizzard-2013 Lessac data is under a research-only licence.
+  The generator is GPL, but only its audio output is committed, and that output is not a derivative work.
+  The bank has 217 clips: 0–99, "hundred", "thousand", "point", the letters A–Z, directions, the callout words, and
+  whole frequent sentences as single clips ("Drone position lost.", "Sentry armed."). The clips are Ogg Vorbis q3,
+  22.05 kHz mono. Each is trimmed, peak-normalised to −1 dBFS, padded with 12 ms of silence at each end, and sped up 1.2× (ffmpeg atempo, pitch kept): a word said on its own comes out long, and without this a stitched warning took 17.7 s.
+  `manifest.tsv` pairs each clip id with the words it stands for.
+- **Short inputs wobble.** A small neural voice sometimes turns a single letter or word into mumble; on the first
+  pass, "M." came out as 1.5 s of noise. So each clip is rendered several ways (spelling, pace and noise settings).
+  The generator transcribes every candidate with faster-whisper (small.en) and keeps the one heard as the intended
+  word, trying the most typical-length candidate first. `gen.py --check` then stitches real callouts together from
+  the bank and transcribes them, which is the test that matters.
+- **Grammar (`core/VoiceGrammar.kt`, pure, unit-tested).** The engine's existing speech text goes in; a clip
+  sequence comes out. Longest phrase match comes first, so whole sentences use their natural clip. "1,500" is read
+  as "one thousand five hundred", "3.0" as "three point zero", and TFR numbers digit by digit. A single letter is its
+  letter name. A zone name the bank can't say (a free-typed cylinder or geofence name) becomes "protected area" or
+  "geofence". A drone name with a space ("DEMO-1 Pilot") is spelled. `VoiceGrammarTest` runs a sweep of about
+  4,900 distinct sentences through the real engine, selector and health monitor. It checks every number the
+  phrasing can produce and every fixed sentence in `SystemPhrases`. It asserts that each one maps fully onto clips
+  that exist, with nothing spelled except drone names.
+- **Playback (`ClipVoice`).** The whole utterance is stitched into one PCM buffer: clips back to back, 60 ms for a
+  comma, 150 ms for a full stop. It plays as a single static `AudioTrack`, so there are no gaps between clips. It
+  uses the same attributes as TTS (`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE`) inside the same per-callout ducking focus,
+  at the volume setting. The voice is ready as soon as the manifest is read and one clip decodes. The rest of the
+  bank decodes in the background, and any clip a callout needs sooner is decoded on demand. Every utterance is
+  logged as `CLIPVOICE <ms>: warning@0 . traffic@…` with each clip's start time.
+- **Selection (`AlertVoice`, rules in the pure `core/VoicePolicy.kt`, `VoicePolicyTest`).** It uses TTS if an engine is ready and hasn't failed recently, else the bundled voice.
+  A TTS `speak()` error, an `onError`, no start within 3 s, or no finish within 3 s + 90 ms per character (at most 15 s; a dead engine reports nothing) puts the bundled voice in charge at once for that
+  same callout, and it stays in charge for 5 minutes (sticky), after which TTS is tried again. A missing engine is
+  looked for again with backoff. The Voice row reads "OK (Google TTS)" or "OK (bundled voice)", and it only reads
+  UNAVAILABLE if the bank itself is damaged. Settings → Voice → **Test voice** plays a full warning through whichever
+  voice is in use.
+
+### Adaptive callout cadence
+
+The owner approved the numbers. `core/Cadence.kt` is a pure function from (level, range, trend, CPA,
+"passing said") to a band. The engine asks it for the interval each tick. The table is in the README ("Alert rules").
+Decisions that go beyond the table:
+
+- **1–3 nm at 20 s vs advisory at 30 s.** With the default rings, anything 1–3 nm away is advisory unless a
+  predictive warning or a controller cylinder lifts it. So the 20 s row applies to caution and warning, and a plain
+  advisory keeps its 30 s.
+- **"Close pass"** means Sentry called the aircraft inside the caution ring, or with a predictive warning. Only then
+  does it say "passing, diverging". An aircraft that turns away at 2.5 nm without ever coming close is just not
+  repeated.
+- **The predicted-CPA trigger for the 6 s band** needs the CPA both **within 30 s and inside the warning ring**. A
+  30 s CPA that misses by 2 nm doesn't count.
+- **The short sentence** has no severity word and no CPA tail: "Traffic, N388KM, west, 1,500 feet, 200 below,
+  closing." "Closing" replaces "converging" there. A parked or crossing aircraft says "passing".
+- **Two aircraft:** the engine emits and the queue orders by severity, then distance, so the closer aircraft goes
+  first at the same level. The queue (`core/CalloutQueue.kt`) keeps one sentence per aircraft and drops anything that
+  has waited more than 15 s.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with
@@ -389,15 +454,14 @@ dismisses?"
   A tone (ToneGenerator on STREAM_MUSIC) plays before each utterance:
   warning `TONE_CDMA_HIGH_SS` 700 ms, caution `TONE_PROP_BEEP2`, advisory `TONE_PROP_BEEP`,
   info `TONE_PROP_ACK`.
-- The queue is ordered by priority and keeps **one pending item per aircraft**: a newer
-  callout replaces an older one that hasn't been spoken yet. Items older than 15 s are
-  dropped, because stale speech is wrong speech. Observed at 4× replay: the 11:53:17
-  warning was replaced by the 11:53:23 TFR-entry callout.
-- **Known trade-off:** a long predictive warning takes about 6 s to say. At 1× replay, the
-  TFR-entry callout (dispatched at 11:53:23) was *spoken* starting about 6 s later, after
-  the 11:53:17 warning finished. Sentry doesn't interrupt an utterance that is already
-  playing. Shortening the predictive sentence is a candidate for tuning with the owner.
-- Every callout is logged as `CALLOUT[...]` and every utterance as `SPEAK [...]` under the
+- The queue (`core/CalloutQueue.kt`) is ordered by severity, then distance (closer first), and keeps **one
+  pending item per aircraft**: a newer callout replaces an older one that hasn't been spoken yet. Items older than
+  15 s are dropped, because stale speech is wrong speech.
+- **Known trade-off:** Sentry doesn't interrupt an utterance that is already playing. A long predictive warning takes
+  about 6 s with TTS and longer with the bundled voice, so in the 6 s close band the next short callout can start
+  right after the previous one ends. That is why the close band uses the short sentence (v0.3.5).
+- Every callout is logged as `CALLOUT[...]`, every utterance as `SPEAK[tts|bundled] [...]`, and every bundled
+  utterance's clip timeline as `CLIPVOICE`, all under the
   `Sentry` logcat tag. The UI's log panel shows the same lines.
 
 ## Notifications
@@ -412,8 +476,8 @@ dismisses?"
 
 ## Debug-only adb hooks
 
-`MainActivity` accepts `--es sentry_action replay|test|set` (`set` takes `pinned`, `station`,
-`station_url`, `worker`, `elev`) **only when
+`MainActivity` accepts `--es sentry_action replay|test|voice_test|set` (`set` takes `pinned`, `station`,
+`station_url`, `worker`, `elev`, and `force_bundled`, which skips TTS the way the RC Plus must) **only when
 `BuildConfig.DEBUG`**, for scripted demos. It will never disarm Sentry. Release builds
 ignore it.
 

@@ -251,6 +251,9 @@ class SettingsActivity : AppCompatActivity() {
             addView(vol)
             savers += { s.voiceOn = v.isChecked; s.volume = vol.progress / 100.0 }
             addView(button("Test callout", secondary = true) { flush(); SentryService.send(this@SettingsActivity, SentryService.ACTION_TEST) })
+            addView(note("Test voice says a full warning through the voice in use: the controller's text-to-speech when it has " +
+                "one, else Sentry's bundled voice (the DJI RC Plus has no text-to-speech). The main screen's Voice row names it."))
+            addView(button("Test voice", secondary = true) { flush(); SentryService.send(this@SettingsActivity, SentryService.ACTION_VOICE_TEST) })
         }
 
         section(right, "Geofences").apply {

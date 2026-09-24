@@ -1,0 +1,79 @@
+# Bundled voice heard on the emulator (v0.3.5, 2026-09-24)
+#
+# AVD rc-plus-29 (Android 10, 400 dpi) with Google TTS DISABLED (pm disable-user com.google.android.tts), so the app
+# found no TTS engine ("TTS init failed status=-1 ... engines=0"), as on the DJI RC Plus. demo replay at 1x,
+# nothing pinned (controller cylinders). The emulator ran with QEMU_AUDIO_DRV=wav, which writes everything the guest
+# plays to a WAV file; that capture (109.7 s) was transcribed with faster-whisper small.en. Logcat of the same run:
+# docs/replay-logcat-bundled-voice.txt (SPEAK[bundled] + CLIPVOICE lines with each clip's start time).
+
+ASR of the captured emulator audio:
+Replace starting. No aircraft pinned, protecting this controller. Traffic, entering advisory area, N388KM, 
+southwest 3.0 miles, 2,800 above, converging. Warning, traffic, N388KM, southwest 2.6 miles, 2,700 above, 
+converging. Closest 2,500 feet in 52 seconds. Traffic, entering TFR65021N388KM, southwest 1.8 miles, 2,700 
+above, converging. Traffic, N388KM, south 1.1 miles, 2,700 above, closing. Traffic, N388KM, south 5,500 feet, 
+2,700 above, closing. Traffic, N388KM, south 2,400 feet, 2,600 above, closing. N388KM, passing, diverging. 
+Caution, traffic, N388KM, northeast 2.1 miles, 2,300 above, diverging. N388KM, clear, diverging.
+
+# tools/voicebank/gen.py --check core/build/voice-sentences.tsv: 30 real sentences stitched from the bank, ASR'd.
+# WER counts a callsign heard as one token ('N388KM') against the spelled form; 'Century armed' is a homophone.
+WER 0.10  Traffic inside geofence imported, N 3 8 8 K M, north, 5,800 feet, 300 above, passing.
+           heard: Traffic inside geofence N388KL north 5,800 feet 300 above passing.
+WER 0.05  Traffic, N 3 8 8 K M, northwest, 1,200 feet, 1,900 above, closing.
+           heard: Traffic N3-8-8-K-L-M. Northwest 1200 feet, 1900 above closing.
+WER 0.11  Traffic inside geofence imported, N 3 8 8 K M, northwest, 4,300 feet, altitude unknown, passing.
+           heard: Traffic inside geofence. N388KL Northwest, 4,300 feet. Altitude unknown. Passing.
+WER 0.04  Warning. Traffic, N 3 8 8 K M, east, 1.5 miles, 1,500 below, converging, closest 100 feet in 38 seconds.
+           heard: Warning. Traffic N388K, Elm East, 1.5 miles, 1,500 below. Converging closest 100 feet in 38 seconds.
+WER 0.00  Warning. Traffic, N 3 8 8 K M, east, 1,800 feet, 300 above, passing.
+           heard: Warning traffic N388KM east 1800 feet 300 above passing.
+WER 0.06  Traffic, N 3 8 8 K M, northwest, 100 feet, 1,900 above, closing.
+           heard: Traffic N3-8-8-K-L-M Northwest 100 feet, 1,900 above closing.
+WER 0.08  Traffic inside TFR 0 0000, N 3 8 8 K M, south, 2.9 miles, altitude unknown, converging.
+           heard: Traffic inside TFR 65021N388KM. South 2.9 miles. Altitude unknown. Converging.
+WER 0.08  Traffic inside TFR 0 0000, N 3 8 8 K M, west, 5,500 feet, 9,000 below, converging.
+           heard: Traffic inside TFR 65021N388KM West, 5,500 feet, 9,000 below. Converging.
+WER 0.06  Warning. Traffic, N 3 8 8 K M, southeast, 2,100 feet, 9,000 below, diverging.
+           heard: Warning, traffic N388K, Elm, Southeast, 2,100 feet, 9,000 below, diverging.
+WER 0.08  Traffic inside TFR 0 0000, N 3 8 8 K M, southeast, 1.5 miles, 9,000 below, passing.
+           heard: Traffic inside TFR 65021N388KM Southeast, 1.5 miles, 9000 below passing.
+WER 0.00  Warning. Traffic, N 3 8 8 K M, southwest, 400 feet, 1,900 above, converging.
+           heard: Warning. Traffic N388KM. Southwest, 400 feet, 1,900 above. Converging.
+WER 0.07  Traffic inside TFR 0 0000, N 3 8 8 K M, southwest, 2,500 feet, 1,500 below, converging.
+           heard: Traffic inside TFR 65021N388KM. Southwest 2500 feet, 1500 below. Converging.
+WER 0.09  Traffic inside TFR 0 0000, N 3 8 8 K M, northwest, 6,000 feet, same altitude, diverging.
+           heard: Traffic inside. TFR 65021N388KM. Northwest. 6,000 feet. Same altitude. Diverging.
+WER 0.06  Traffic inside geofence imported, N 3 8 8 K M, north, 2.4 miles, altitude unknown, converging.
+           heard: Traffic inside geofence. N388KM north 2.4 miles. Altitude unknown. Converging.
+WER 0.08  Traffic inside TFR 0 0000, N 3 8 8 K M, north, 1,800 feet, altitude unknown, diverging.
+           heard: Traffic inside TFR 65021N388KM North, 1,800 feet, altitude unknown, diverging.
+WER 0.00  Warning. Traffic, N 3 8 8 K M, northeast, 600 feet, same altitude, passing.
+           heard: Warning. Traffic N388KM. Northeast 600 feet. Same altitude. Passing.
+WER 0.08  Traffic inside TFR 0 0000, N 3 8 8 K M, north, 4,500 feet, same altitude, diverging.
+           heard: Traffic inside. TFR 65021N388KM North. 4500 feet. Same altitude. Diverging.
+WER 0.06  Traffic inside geofence imported, N 3 8 8 K M, southeast, 2.9 miles, altitude unknown, passing.
+           heard: Traffic inside Geofence, N388KM, southeast 2.9 miles. Altitude unknown, passing.
+WER 0.00  No aircraft pinned. Protecting this controller.
+           heard: No aircraft pinned, protecting this controller.
+WER 0.00  Controller GPS unavailable. Nothing protected.
+           heard: Controller GPS unavailable. Nothing protected.
+WER 0.00  Controller GPS regained.
+           heard: Controller GPS regained.
+WER 0.00  Waiting for this controller's aircraft.
+           heard: Waiting for this controller's aircraft.
+WER 0.38  Watching U R 3 1, this controller's aircraft.
+           heard: Watching DEMO-1, this controller's aircraft.
+WER 0.00  Drone feed not reachable
+           heard: Drone feed, not reachable.
+WER 0.50  Sentry armed
+           heard: Century armed.
+WER 0.00  Sentry disarmed
+           heard: Sentry disarmed.
+WER 0.00  Replay starting
+           heard: Replay starting.
+WER 0.00  Update available
+           heard: Update available.
+WER 0.11  Test callout. Traffic, N 3 8 8 K M, southwest, 1,500 feet, 300 below, converging.
+           heard: Test callout. Traffic. N388. 8K. Elm. Southwest. 1,500 feet. 300 below. Converging.
+WER 0.00  Warning. Traffic, N 3 8 8 K M, southwest, 1,500 feet, 200 below, converging, closest 1,200 feet in 18 seconds.
+           heard: Warning. Traffic N388KM. Southwest 1500 feet, 200 below. Converging closest 1200 feet in 18 seconds.
+28/30 sentences with WER <= 0.15

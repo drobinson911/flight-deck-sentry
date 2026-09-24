@@ -1,0 +1,275 @@
+# Flight Deck Sentry voice bank: one clip per line.
+# id | text rendered by the TTS generator | words the callout grammar matches (lowercase; empty = special)
+# Special ids used by the grammar's rules: n0..n99, h1..h9 (N hundred), t1..t30 (N thousand), hundred, thousand, point, l_a..l_z.
+# Longer phrases win over shorter ones (greedy longest match), so whole sentences come out as one natural clip.
+
+# ── numbers ──
+n0|Zero.|
+n1|One.|
+n2|Two.|
+n3|Three.|
+n4|Four.|
+n5|Five.|
+n6|Six.|
+n7|Seven.|
+n8|Eight.|
+n9|Nine.|
+n10|Ten.|
+n11|Eleven.|
+n12|Twelve.|
+n13|Thirteen.|
+n14|Fourteen.|
+n15|Fifteen.|
+n16|Sixteen.|
+n17|Seventeen.|
+n18|Eighteen.|
+n19|Nineteen.|
+n20|Twenty.|
+n21|Twenty-one.|
+n22|Twenty-two.|
+n23|Twenty-three.|
+n24|Twenty-four.|
+n25|Twenty-five.|
+n26|Twenty-six.|
+n27|Twenty-seven.|
+n28|Twenty-eight.|
+n29|Twenty-nine.|
+n30|Thirty.|
+n31|Thirty-one.|
+n32|Thirty-two.|
+n33|Thirty-three.|
+n34|Thirty-four.|
+n35|Thirty-five.|
+n36|Thirty-six.|
+n37|Thirty-seven.|
+n38|Thirty-eight.|
+n39|Thirty-nine.|
+n40|Forty.|
+n41|Forty-one.|
+n42|Forty-two.|
+n43|Forty-three.|
+n44|Forty-four.|
+n45|Forty-five.|
+n46|Forty-six.|
+n47|Forty-seven.|
+n48|Forty-eight.|
+n49|Forty-nine.|
+n50|Fifty.|
+n51|Fifty-one.|
+n52|Fifty-two.|
+n53|Fifty-three.|
+n54|Fifty-four.|
+n55|Fifty-five.|
+n56|Fifty-six.|
+n57|Fifty-seven.|
+n58|Fifty-eight.|
+n59|Fifty-nine.|
+n60|Sixty.|
+n61|Sixty-one.|
+n62|Sixty-two.|
+n63|Sixty-three.|
+n64|Sixty-four.|
+n65|Sixty-five.|
+n66|Sixty-six.|
+n67|Sixty-seven.|
+n68|Sixty-eight.|
+n69|Sixty-nine.|
+n70|Seventy.|
+n71|Seventy-one.|
+n72|Seventy-two.|
+n73|Seventy-three.|
+n74|Seventy-four.|
+n75|Seventy-five.|
+n76|Seventy-six.|
+n77|Seventy-seven.|
+n78|Seventy-eight.|
+n79|Seventy-nine.|
+n80|Eighty.|
+n81|Eighty-one.|
+n82|Eighty-two.|
+n83|Eighty-three.|
+n84|Eighty-four.|
+n85|Eighty-five.|
+n86|Eighty-six.|
+n87|Eighty-seven.|
+n88|Eighty-eight.|
+n89|Eighty-nine.|
+n90|Ninety.|
+n91|Ninety-one.|
+n92|Ninety-two.|
+n93|Ninety-three.|
+n94|Ninety-four.|
+n95|Ninety-five.|
+n96|Ninety-six.|
+n97|Ninety-seven.|
+n98|Ninety-eight.|
+n99|Ninety-nine.|
+hundred|hundred|
+thousand|thousand|
+point|point|
+
+# ── number chunks (shorter and more natural than 'one' + 'thousand') ──
+h1|One hundred.|
+h2|Two hundred.|
+h3|Three hundred.|
+h4|Four hundred.|
+h5|Five hundred.|
+h6|Six hundred.|
+h7|Seven hundred.|
+h8|Eight hundred.|
+h9|Nine hundred.|
+t1|One thousand.|
+t2|Two thousand.|
+t3|Three thousand.|
+t4|Four thousand.|
+t5|Five thousand.|
+t6|Six thousand.|
+t7|Seven thousand.|
+t8|Eight thousand.|
+t9|Nine thousand.|
+t10|Ten thousand.|
+t11|Eleven thousand.|
+t12|Twelve thousand.|
+t13|Thirteen thousand.|
+t14|Fourteen thousand.|
+t15|Fifteen thousand.|
+t16|Sixteen thousand.|
+t17|Seventeen thousand.|
+t18|Eighteen thousand.|
+t19|Nineteen thousand.|
+t20|Twenty thousand.|
+t21|Twenty-one thousand.|
+t22|Twenty-two thousand.|
+t23|Twenty-three thousand.|
+t24|Twenty-four thousand.|
+t25|Twenty-five thousand.|
+t26|Twenty-six thousand.|
+t27|Twenty-seven thousand.|
+t28|Twenty-eight thousand.|
+t29|Twenty-nine thousand.|
+t30|Thirty thousand.|
+
+# ── letters (spelled callsigns: N 3 8 8 K M) ──
+l_a|Ay.|
+l_b|Bee.|
+l_c|See.|
+l_d|Dee.|
+l_e|Ee.|
+l_f|Eff.|
+l_g|Jee.|
+l_h|Aitch.|
+l_i|Eye.|
+l_j|Jay.|
+l_k|Kay.|
+l_l|Ell.|
+l_m|Em.|
+l_n|En.|
+l_o|Oh.|
+l_p|Pee.|
+l_q|Cue.|
+l_r|Are.|
+l_s|Ess.|
+l_t|Tee.|
+l_u|You.|
+l_v|Vee.|
+l_w|Double you.|
+l_x|Ex.|
+l_y|Why.|
+l_z|Zee.|
+# ── severity, openers ──
+warning|Warning.|warning
+caution|Caution.|caution
+traffic|Traffic,|traffic
+advisory|advisory|advisory
+test_callout|Test callout.|test callout
+# ── zones ──
+inside|inside|inside
+entering|entering|entering
+tfr|T F R|tfr
+tfr_letters|T F R|t f r
+geofence|geofence|geofence
+protected_area|protected area|protected area
+zone|zone|zone
+ops_area|ops area|ops area
+advisory_area|advisory area|advisory area
+drone_circle|drone circle|drone circle
+circle|circle|circle
+area|area|area
+# ── directions ──
+north|north|north
+northeast|northeast|northeast
+east|east|east
+southeast|southeast|southeast
+south|south|south
+southwest|southwest|southwest
+west|west|west
+northwest|northwest|northwest
+# ── distance, vertical, time ──
+feet|feet|feet
+miles|miles|miles
+mile|mile|mile
+above|above|above
+below|below|below
+same_altitude|same altitude|same altitude
+altitude_unknown|altitude unknown|altitude unknown
+unknown|unknown|unknown
+altitude|altitude|altitude
+level|level|level
+climbing|climbing|climbing
+descending|descending|descending
+closest|closest|closest
+in|in|in
+seconds|seconds.|seconds
+second|second.|second
+# ── trend ──
+converging|converging|converging
+diverging|diverging|diverging
+passing|passing|passing
+closing|closing|closing
+passing_diverging|passing, diverging.|passing diverging
+clear|clear|clear
+clear_diverging|clear, diverging.|clear diverging
+track_lost|track lost.|track lost
+on_the_ground|on the ground.|on the ground
+hex|hex|hex
+# ── selection ──
+watching|Watching|watching
+now_watching|Now watching|now watching
+this_controllers_aircraft|this controller's aircraft.|this controller's aircraft
+waiting_for_this_controllers_aircraft|Waiting for this controller's aircraft.|waiting for this controller's aircraft
+no_aircraft_pinned|No aircraft pinned.|no aircraft pinned
+protecting_this_controller|Protecting this controller.|protecting this controller
+no_drone_selected|No drone selected.|no drone selected
+controller_gps_unavailable|Controller GPS unavailable.|controller gps unavailable
+nothing_protected|Nothing protected.|nothing protected
+controller_gps_regained|Controller GPS regained.|controller gps regained
+# ── drone position ──
+drone_position_lost|Drone position lost.|drone position lost
+drone_position_still_lost|Drone position still lost.|drone position still lost
+drone_position_regained|Drone position regained.|drone position regained
+no_drone_position|No drone position.|no drone position
+using|using|using
+manual_position|manual position|manual position
+controller_gps|controller GPS|controller gps
+fleet_feed|fleet feed|fleet feed
+dronesense|DroneSense|dronesense
+flight_deck_air|Flight Deck Air|flight deck air
+replay|replay|replay
+drone_feed_lost|Drone feed lost.|drone feed lost
+# ── data health ──
+traffic_data_stale|Traffic data stale.|traffic data stale
+traffic_data_restored|Traffic data restored.|traffic data restored
+drone_feed|Drone feed|drone feed
+station_link|Station link|station link
+cloud_traffic|Cloud traffic|cloud traffic
+tfr_data|T F R data|t f r data
+lost|lost.|lost
+not_reachable|not reachable.|not reachable
+regained|regained.|regained
+station_link_lost|Station link lost.|station link lost
+station_link_regained|Station link regained.|station link regained
+# ── system ──
+sentry_armed|Sentry armed.|sentry armed
+sentry_disarmed|Sentry disarmed.|sentry disarmed
+replay_starting|Replay starting.|replay starting
+update_available|Update available.|update available

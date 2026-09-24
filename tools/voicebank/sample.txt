@@ -1,0 +1,4 @@
+# Line 1: the sample sentence (an engine warning). Line 2: its clip sequence, exactly as VoiceGrammar produces it
+# ("," and "." are the app's pauses). VoiceGrammarTest fails if line 2 drifts from the grammar.
+Warning. Traffic, N 3 8 8 K M, southwest, 1,500 feet, 200 below, converging, closest 1,200 feet in 18 seconds.
+warning . traffic , l_n n3 n8 n8 l_k l_m , southwest , t1 h5 feet , h2 below , converging , closest t1 h2 feet in n18 seconds

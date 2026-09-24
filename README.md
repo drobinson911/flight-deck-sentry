@@ -12,16 +12,26 @@ truck's ADS-B station audio was drowned out by the highway noise, ForeFlight doe
 DroneSense shows no proximity warning. The public ADS-B feed also showed N388KM's altitude as
 `"ground"` for the whole pass, at 160 kt. Sentry exists so this never happens silently again.
 
-Replaying the real data from that day, Sentry says:
+Replaying the real data from that day with the v0.3.5 cadence, Sentry says:
 
 | Replay time (PDT) | Severity | Spoken |
 |---|---|---|
 | 11:52:35 | advisory | "Traffic, N388KM, southwest, 3.0 miles, 100 above, converging." |
 | 11:52:57 | **warning** | "Warning. Traffic, N388KM, southwest, 1.9 miles, 100 below, converging, closest 2,700 feet in 40 seconds." |
-| 11:53:17 | **warning** | "Warning. Traffic, N388KM, southwest, 5,900 feet, 200 below, converging, closest 1,200 feet in 18 seconds." |
+| 11:53:03 | **warning** | "Traffic, N388KM, southwest, 1.6 miles, 100 below, closing." |
+| 11:53:14 | **warning** | "Traffic, N388KM, southwest, 1.1 miles, 200 below, closing." |
+| 11:53:20 | **warning** | "Traffic, N388KM, southwest, 5,300 feet, 300 below, closing." |
 | 11:53:23 | **warning** | "Traffic entering TFR 0/0000, N388KM, southwest, 4,700 feet, 300 below, converging." |
-| *11:53:40* | | *(closest approach, 0.24 nm)* |
+| 11:53:29 | **warning** | "Traffic, N388KM, south, 3,200 feet, 300 below, closing." |
+| 11:53:35 | **warning** | "Traffic, N388KM, south, 2,100 feet, 300 below, closing." |
+| *11:53:40* | advisory | "N388KM passing, diverging." *(closest approach, 0.24 nm)* |
+| 11:54:25 | advisory | "Traffic, N388KM, northeast, 1.9 miles, 500 below, diverging." |
 | 11:54:54 | info | "N388KM clear, diverging." |
+
+The short "… closing." callouts are the 6 s close band: the aircraft was inside 0.5 nm, or on course to pass
+inside 0.5 nm within 30 s. The gap at 11:53:03–11:53:14 is where the predicted closest approach briefly moved
+beyond 30 s, so the 20 s band applied until it came back. See "Alert cadence" below; `CadenceTest.demoTimeline`
+prints this table.
 
 The first warning comes **43 seconds before the pass**. The same data run through the full selection
 path (`DemoSelectionReplayTest`, with the replay drone's synthetic serial pinned; it carries the callsign
@@ -37,8 +47,12 @@ N388KM passed about 2,700 ft above that point, so a 1 nm cylinder with a 1,500 f
 | 11:51:55 | info | "No aircraft pinned. Protecting this controller." (pinned but absent: "Waiting for this controller's aircraft.") |
 | 11:53:03 | **warning** | "Warning. Traffic, N388KM, southwest, 2.6 miles, 2,700 above, converging, closest 2,500 feet in 52 seconds." |
 | 11:53:23 | **warning** | "Traffic entering TFR 0/0000, N388KM, southwest, 1.8 miles, 2,700 above, converging." |
+| 11:53:37 | **warning** | "Traffic, N388KM, south, 1.1 miles, 2,700 above, closing." |
 | 11:53:41 | **warning** | "Traffic entering ops area, N388KM, south, 6,000 feet, 2,700 above, converging." |
-| 11:54:01 | **warning** | "Warning. Traffic, N388KM, southeast, 1,400 feet, 2,600 above, converging, closest 1,400 feet in 1 second." |
+| 11:53:47 | **warning** | "Traffic, N388KM, south, 4,300 feet, 2,700 above, closing." |
+| 11:53:53 | **warning** | "Traffic, N388KM, south, 2,900 feet, 2,700 above, closing." |
+| 11:53:59 | **warning** | "Traffic, N388KM, south, 1,600 feet, 2,600 above, closing." |
+| 11:54:03 | advisory | "N388KM passing, diverging." |
 | 11:54:29 | info | "N388KM clear, diverging." |
 
 N388KM physically crossed 1 nm from the launch point at about 11:53:39.7 (1.03 nm at 11:53:39, 0.81 nm
@@ -124,26 +138,61 @@ the pinned aircraft is not in the feed, or when none is pinned:
 - **TFR / geofence entry:** a transition from outside to inside, when the aircraft's altitude is inside the zone's floor/ceiling. **Unknown altitude counts as inside** and is spoken as "altitude unknown". Only TFRs within 10 nm of the drone are watched.
 - **What is spoken:** cardinal direction from the drone (north … northwest); distance in nautical miles to one decimal, or in feet under 1 nm; "N hundred above/below"; converging / diverging / passing (from the range rate). Callsigns are spelled out ("N 3 8 8 K M") so they carry over rotor and road noise.
 - **Tones:** a different tone per severity plays before the speech.
-- **Callout cadence, per aircraft (as implemented and unit-tested):**
-  - **Ring escalation** (none → advisory → caution → warning, or a predictive warning) is spoken **immediately**.
-  - **Same level, still inside:** repeated at most every **20 s** for caution and warning, **30 s** for advisory, and
-    **not at all while the aircraft is diverging** (moving away). Dropping to a lower level is silent.
-  - **Zone entry** (TFR, geofence, controller cylinder): **one** "Traffic entering …" callout on the outside-to-inside
-    transition ("inside" when it is first seen already in). Re-entering the same zone within 20 s is not re-announced.
-    Inside a controller cylinder the aircraft is at caution, so after the entry callout it is repeated every 20 s
-    (not while diverging) as "Caution. Traffic, …". A predicted pass inside 0.5 nm escalates it to warning at once.
-    For example, entry at 0 s, repeats at 20 s and 40 s, then "clear" when it leaves (`cylinderCadenceEntryThenEvery20sThenClearOnce`).
-  - **Clear:** **once**, when it leaves every ring or cylinder, with 0.2 nm and 200 ft exit hysteresis: "N388KM clear" or
-    "N388KM clear, diverging".
+- **Alert cadence, per aircraft (v0.3.5, owner-approved; `core/Cadence.kt`, `CadenceTest`).** How often Sentry
+  repeats a callout about the same aircraft depends on its range and whether it is closing:
+
+  | Where the aircraft is | Repeat | What is said |
+  |---|---|---|
+  | beyond 3 nm, or diverging | none (entry and escalation only) | "clear" once when it leaves 3 nm or the vertical band |
+  | 1–3 nm, not diverging, at caution or warning | every **20 s** | the full sentence |
+  | 1–3 nm, advisory level | every **30 s** (unchanged) | the full sentence |
+  | 0.5–1 nm, not diverging | every **12 s** | the full sentence |
+  | inside 0.5 nm, or a predicted pass inside 0.5 nm within 30 s | every **6 s** | the **short** sentence: "Traffic, N388KM, west, 1,500 feet, 200 below, closing." |
+  | opening after a close pass | "N388KM passing, diverging." **once**, then every **45 s** while still inside 3 nm | then "clear" |
+
+  - The bands are the configured rings (defaults 3 / 1 / 0.5 nm). "Not diverging" includes a parked or crossing
+    aircraft. A **close pass** means Sentry called it inside the caution ring (1 nm) or with a predictive warning.
+  - **Escalation always interrupts the timer**: none → advisory → caution → warning, or a predictive warning, is spoken
+    at once. Dropping to a lower level is silent, and the new band's timer applies.
+  - **Zone entry** (TFR, geofence, controller cylinder): **one** "Traffic entering …" callout ("inside" when first
+    seen already in; re-entering the same zone within 20 s is not announced again). After that the aircraft falls
+    under the range cadence above, not a flat 20 s. For example, a cylinder entry at 0.8 nm is repeated every 12 s
+    (`cylinderCadenceEntryThenRangeCadenceThenClearOnce`).
+  - **Clear:** once, when it leaves every ring or cylinder, with 0.2 nm and 200 ft exit hysteresis.
   - **Gone:** "track lost" once for a target that disappears after being called, or "on the ground" when it lands.
-  - **Voice queue:** at most one waiting callout per aircraft (a newer one replaces an unspoken older one), in
-    priority order. A callout that has waited more than 15 s is dropped, and one already playing is not interrupted.
+  - **Voice queue** (`core/CalloutQueue.kt`): at most **one waiting sentence per aircraft** (a newer one replaces an
+    unspoken older one). Most severe first; at the same severity the **closer aircraft first**. A sentence that has
+    waited more than 15 s is dropped, and one already playing is not interrupted.
 - **Targets shown** (list and compass only; alerts are unaffected): within **10 nm of this controller's aircraft**
   when it is watched, else within **15 nm of the controller**, and hidden above **18,000 ft** (GPS altitude, else
   baro; unknown altitude stays shown). All three are settings. An aircraft Sentry is alerting on is always shown.
 - **Stale data is never announced:** targets whose `seen_pos` is over 30 s old are dropped. Sentry says "Traffic data stale" once when all traffic sources are more than 30 s old, "Drone position lost" when the drone's position is more than 15 s old (then "regained"), and "track lost" or "on the ground" for a target it had been calling.
 - **Ground mode at speed:** `alt_baro:"ground"` with a speed of 50 kt or more is treated as **airborne, altitude unknown**. It is never dropped as ground traffic. (This is the N388KM lesson.)
 - **Altitude:** `alt_geom` is used when present. Otherwise `alt_baro` + 300 ft, labelled "estimated" (≈) on screen. The drone's altitude is MSL from the feed.
+
+## Voice: text-to-speech, and Sentry's own voice underneath it (v0.3.5)
+
+The DJI RC Plus runs DJI's cut-down Android 10, which has **no text-to-speech engine** and no Google services. On it,
+0.3.4 said "Voice unavailable" and played tones only. Sentry now carries its **own voice**, stacked under TTS:
+
+- **TTS first, bundled voice underneath.** If the controller has a working TTS engine, Sentry uses it. If there is
+  none, or it isn't ready, Sentry uses its **bundled voice**. If TTS fails on a callout (an error, no start within 3 s, or no finish
+  within 3 s + 90 ms per character), that same callout is spoken by the bundled voice at once, and the bundled voice stays in charge for
+  5 minutes before TTS is tried again. Tones and heads-up banners work either way.
+- The main screen's **Voice** row names the voice in use: **"OK (bundled voice)"** or **"OK (Google TTS)"**. It
+  never says "unavailable" while the bundled clips are installed. **Settings → Voice → Test voice** plays a full
+  warning through that voice. **Test callout** is still there.
+- **The bundled voice** is a bank of recorded clips (`app/src/main/assets/voice/`, 256 clips, about 2 MB): numbers
+  (0–99, "N hundred", "N thousand"), letters A–Z, directions, the callout words, and common whole sentences such as
+  "Drone position lost." Every callout the engine can produce is put together from these clips, back to back, with
+  short pauses at commas. A callsign is spelled out as usual ("N 3 8 8 K M"). A cylinder or geofence name the bank
+  can't say becomes "protected area" or "geofence". A drone name with a space in it is spelled out letter by letter.
+- **Where the clips come from:** [Piper](https://github.com/OHF-Voice/piper1-gpl) TTS, rendered offline on the build
+  machine with the voice **en_US-kristin-medium**. That voice was trained on LibriVox recordings, which are
+  **public domain**. The generator and its word list are in `tools/voicebank/` (`gen.py`, `phrases.txt`). Hear the
+  result in `docs/voice-sample-warning.ogg`: the sample warning, stitched exactly as the controller plays it.
+- A unit test (`VoiceGrammarTest`) runs about 4,900 distinct sentences from the real engine, selector and health
+  monitor through the clip grammar. It fails if any sentence needs a clip the bank doesn't have.
 
 ## Install on the RC Plus
 
@@ -265,6 +314,8 @@ otherwise the replay protects the controller cylinders. A replay clock is shown 
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 1
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 4 --ez cloud_view true
 adb shell "am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --es pinned 1581F7K3C251F00C9B34"
+adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --ez force_bundled true   # skip TTS, as on the RC Plus
+adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action voice_test                    # a full warning through the voice in use
 ```
 
 The replay drone carries a **synthetic** serial, `1581F7K3C251F00C9B34`. The recorded track has no serial, so
@@ -295,7 +346,10 @@ bottom, 46 is that build's picker, and 47 is the replay with callouts. v0.3.3: 4
 tap-to-pin list (mock feed, synthetic serials), 52 waiting for this controller's aircraft while another drone is in
 the feed, 53 the pinned aircraft appearing, 54 the Drone feed row with a rejected token, 55 "no drones in feed" and the
 drop-out to waiting, and 56 the replay with the targets list filtered to 10 nm of the aircraft. 57 is the old 240 dpi
-profile on 0.3.3.
+profile on 0.3.3. v0.3.5 (`rc-plus-29`): 66 has Google TTS disabled, as on the RC Plus (no TTS engine), and the Voice row reads
+"OK (bundled voice)" during the 1× replay with the new cadence. 67 has Google TTS enabled: "OK (Google TTS)", the pinned replay
+in the 6 s close band, and the "passing, diverging" banner. 68 is Settings → Voice with **Test voice**. What the emulator played was
+recorded and transcribed: `docs/voice-bundled-emulator-capture.txt`.
 
 `docs/screenshots/` 01–26: emulator at 1920×1200 / 240 dpi (AVD `sentry-rc`, 1280×800 dp). **That profile was
 wrong for the RC Plus.** 27–36 (0.3.2) used 320 dpi (about 960×600 dp), which was still not dense enough;
@@ -321,12 +375,15 @@ callsigns in 13, 15, 18 and 20 came from a **mock** DroneSense feed on the emula
 core/  pure Kotlin/JVM: Geo, CpaMath, AlertEngine, HealthMonitor, Parsers, TrafficMerger, Replay,
        Selection (DroneSelector: pinned serial else controller, Cylinder, KnownDrones), FleetStatus
        (why the Drone feed shows no drones), TargetDisplay (what the list and compass show),
-       Update (SemVer, Releases JSON, UpdatePolicy) (+ tests)
-app/   SentryService (FGS, pollers, watchdog, replay), AlertVoice (TTS+tones+ducking),
+       Update (SemVer, Releases JSON, UpdatePolicy), Cadence (callout repeat bands), CalloutQueue +
+       ClipTimeline, VoiceGrammar (speech text -> clip ids), VoicePolicy (TTS or bundled), SystemPhrases (+ tests)
+app/   SentryService (FGS, pollers, watchdog, replay), AlertVoice (TTS or bundled voice + tones + ducking), ClipVoice,
        Notifier (status + heads-up + update), MainActivity, SettingsActivity, DroneHistory,
        Updater (GitHub check, download, PackageInstaller session), UpdatePrompt, RadarView, BootReceiver,
        ScreenLayout (compact vs wide layout by width in dp; unit-tested)
-VERSION                        the one version source (0.3.3 -> versionCode 303)
+app/src/main/assets/voice/     the bundled voice: <id>.ogg clips + manifest.tsv (generated)
+tools/voicebank/               gen.py + phrases.txt + sample.txt: regenerates the bundled voice offline (Piper)
+VERSION                        the one version source (0.3.5 -> versionCode 305)
 .github/workflows/android.yml  every push: tests + debug APK artifact
 .github/workflows/release.yml  tag v*: tests + signed release APK attached to the GitHub release
 docs/  DESIGN.md, screenshots, replay logs

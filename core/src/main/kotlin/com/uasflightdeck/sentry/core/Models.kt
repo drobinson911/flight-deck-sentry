@@ -140,6 +140,8 @@ enum class Severity(val rank: Int, val label: String) {
 
 enum class EventKind {
     TFR_ENTRY, GEOFENCE_ENTRY, CYLINDER_ENTRY, PROXIMITY, PREDICTIVE, CLEAR, TRACK_LOST,
+    /** "N388KM passing, diverging": said once when an aircraft starts opening after a close pass (v0.3.5). */
+    PASSING,
     OWNSHIP_ACQUIRED, OWNSHIP_LOST, OWNSHIP_REGAINED, OWNSHIP_MANUAL,
     TRAFFIC_STALE, TRAFFIC_RESTORED,
     SOURCE_LOST, SOURCE_REGAINED,
@@ -160,6 +162,8 @@ data class AlertEvent(
     val text: String,
     val speech: String = text,
     val hex: String? = null,
+    /** Distance to the aircraft when the callout was made (nm); orders two aircraft at the same severity, closer first. */
+    val distNm: Double? = null,
 )
 
 /** Every tunable in one place. Defaults are the spec's defaults. */
@@ -175,8 +179,19 @@ data class SentryConfig(
     val ceilingAboveFt: Double = 2000.0,
     val baroCorrectionFt: Double = 300.0,
     val cpaHorizonSec: Double = 60.0,
+    /** A zone (TFR, geofence, cylinder) re-entered within this many seconds is not announced again. */
     val reannounceSec: Double = 20.0,
+    /** Callout cadence (v0.3.5, owner-approved; see [Cadence]). Advisory-level repeats stay at 30 s. */
     val advisoryReannounceSec: Double = 30.0,
+    /** Caution/warning between the caution ring (1 nm) and the advisory ring (3 nm), not diverging. */
+    val midRepeatSec: Double = 20.0,
+    /** Between the warning ring (0.5 nm) and the caution ring (1 nm), not diverging. */
+    val nearRepeatSec: Double = 12.0,
+    /** Inside the warning ring, or a predicted pass inside it within [closeCpaSec]: short sentence. */
+    val closeRepeatSec: Double = 6.0,
+    val closeCpaSec: Double = 30.0,
+    /** Opening after a close pass, still inside the advisory ring. */
+    val openingRepeatSec: Double = 45.0,
     val staleTargetSec: Double = 30.0,
     val ownshipLostSec: Double = 15.0,
     val trafficStaleSec: Double = 30.0,
