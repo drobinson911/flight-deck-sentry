@@ -59,6 +59,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
     private val tracks = HashMap<String, TrackState>()
     private var ownState = OwnState.UNKNOWN
     private var ownLastSource: OwnshipSource? = null
+    private var ownLastId: String? = null
     private var ownLostAnnounceMs = 0L
     private var ownPrev: Ownship? = null
     private var ownLast: Ownship? = null
@@ -66,7 +67,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
     private var trafficStale = false
 
     fun reset() {
-        tracks.clear(); ownState = OwnState.UNKNOWN; ownLastSource = null
+        tracks.clear(); ownState = OwnState.UNKNOWN; ownLastSource = null; ownLastId = null
         ownPrev = null; ownLast = null; firstStepMs = null; trafficStale = false
     }
 
@@ -123,7 +124,16 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
             // "ground" + slow = really on the ground. "ground" + fast = airborne
             // with an unknown altitude (the N388KM case). Unknown speed + ground = ground.
             val groundAirborne = t.reportsGround && (t.gsKt ?: 0.0) >= cfg.groundSpeedAirborneKt
-            if (t.reportsGround && !groundAirborne) continue
+            if (t.reportsGround && !groundAirborne) {
+                // It landed (or is taxiing). If we'd been calling it, say so once —
+                // "track lost" would wrongly suggest it might still be out there.
+                val st = tracks.remove(t.hex)
+                if (st != null && st.announced >= Severity.ADVISORY) events += AlertEvent(
+                    nowMs, EventKind.CLEAR, Severity.INFO,
+                    text = "${t.displayId} on the ground.",
+                    speech = "${Phrasing.spelledId(t.displayId)} on the ground.", hex = t.hex)
+                continue
+            }
 
             val st = tracks.getOrPut(t.hex) { TrackState() }
             st.seenThisStep = true
@@ -305,16 +315,26 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
                 else AlertEvent(nowMs, EventKind.OWNSHIP_REGAINED, Severity.INFO, "Drone position regained")
                 OwnState.OK -> {
                     val prev = ownLastSource
-                    if (prev != null && prev != o.source) {
-                        if (o.isManual && !isManual(prev)) events += AlertEvent(nowMs, EventKind.OWNSHIP_MANUAL,
+                    val prevId = ownLastId
+                    if (prev != null && prev != o.source && o.isManual && !isManual(prev)) {
+                        events += AlertEvent(nowMs, EventKind.OWNSHIP_MANUAL,
                             Severity.CAUTION, "Drone feed lost, using ${o.source.label}")
-                        else if (!o.isManual && isManual(prev)) events += AlertEvent(nowMs,
-                            EventKind.OWNSHIP_REGAINED, Severity.INFO, "Drone position regained")
+                    } else if (prev != null && !o.isManual && isManual(prev)) {
+                        events += AlertEvent(nowMs, EventKind.OWNSHIP_REGAINED, Severity.INFO,
+                            "Drone position regained, watching ${o.name}", "Drone position regained, watching ${Phrasing.spelledId(o.name)}")
+                    } else if (prevId != null && prevId != o.id && !o.isManual) {
+                        events += AlertEvent(nowMs, EventKind.OWNSHIP_ACQUIRED, Severity.INFO,
+                            "Now watching ${o.name}", "Now watching ${Phrasing.spelledId(o.name)}")
                     }
                 }
             }
+            // A different aircraft is now "ownship": every range/zone memory is
+            // relative to the old one, so drop it silently rather than emit a
+            // burst of "track lost" for traffic that is simply far from the new drone.
+            if (ownLastId != null && ownLastId != o.id) tracks.clear()
             ownState = OwnState.OK
             ownLastSource = o.source
+            ownLastId = o.id
         } else {
             when (ownState) {
                 OwnState.OK -> {

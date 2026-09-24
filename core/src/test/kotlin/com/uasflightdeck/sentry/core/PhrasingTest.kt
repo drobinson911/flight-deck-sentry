@@ -24,5 +24,7 @@ class PhrasingTest {
     @Test fun spelledIds() {
         assertEquals("N 3 8 8 K M", Phrasing.spelledId("N388KM"))
         assertEquals("hex A 4 7 9 E F", Phrasing.spelledId("hex A479EF"))
+        assertEquals("U R 3 3", Phrasing.spelledId("DEMO-2"))
+        assertEquals("manual pin", Phrasing.spelledId("manual pin"))
     }
 }

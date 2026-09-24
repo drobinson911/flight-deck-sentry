@@ -55,6 +55,7 @@ object Phrasing {
      */
     fun spelledId(id: String): String {
         if (id.startsWith("hex ")) return "hex " + id.removePrefix("hex ").toCharArray().joinToString(" ")
+        if (id.any { it.isWhitespace() }) return id          // a name like "manual pin", not a callsign
         return id.filter { it.isLetterOrDigit() }.toCharArray().joinToString(" ")
     }
 

@@ -195,7 +195,25 @@ class EngineRulesTest {
         e.s(sec(0), emptyList())
         val ev = e.s(sec(1), emptyList(), o = own(sec(1), src = OwnshipSource.MANUAL_PINNED)).events.single()
         assertEquals("Drone feed lost, using manual position", ev.text)
-        assertEquals("Drone position regained", e.s(sec(2), emptyList()).events.single().text)
+        assertEquals("Drone position regained, watching DEMO-1", e.s(sec(2), emptyList()).events.single().text)
+    }
+
+    @Test fun landingTargetSaysOnTheGroundNotTrackLost() {
+        val e = AlertEngine()
+        e.s(sec(0), emptyList())
+        e.s(sec(1), listOf(tgt(sec(1), 270.0, 1.5, gs = 130.0, trk = 270.0)))
+        val ev = e.s(sec(2), listOf(tgt(sec(2), 270.0, 1.6, geomFt = null, ground = true, gs = 20.0))).events
+        assertEquals("N1234 on the ground.", ev.single().text)
+        assertTrue(e.s(sec(3), emptyList()).events.isEmpty())             // no "track lost" afterwards
+    }
+
+    @Test fun switchingToAnotherDroneResetsTracksSilently() {
+        val e = AlertEngine()
+        e.s(sec(0), emptyList())
+        e.s(sec(1), listOf(tgt(sec(1), 0.0, 0.8)))                        // caution on D1
+        val other = Ownship("D2", "DEMO-2", 36.6, -118.9, 3700.0, 300.0, sec(2), OwnshipSource.FLEET_DRONESENSE)
+        val ev = e.s(sec(2), emptyList(), o = other).events
+        assertEquals(listOf("Now watching DEMO-2"), ev.map { it.text })       // and no "N1234 track lost"
     }
 
     @Test fun trafficStaleOnceAndRestored() {
