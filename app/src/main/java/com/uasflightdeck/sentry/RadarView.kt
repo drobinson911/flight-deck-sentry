@@ -55,7 +55,12 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     }
 
     override fun onMeasure(w: Int, h: Int) {
-        val size = min(MeasureSpec.getSize(w), MeasureSpec.getSize(h))
+        val wSize = MeasureSpec.getSize(w)
+        // Inside a scrolling column the first measure pass has no height limit: ask only for the
+        // minimum, so the compass shrinks before the column starts to scroll; the fill pass then
+        // gives it whatever height is left.
+        val size = if (MeasureSpec.getMode(h) == MeasureSpec.UNSPECIFIED) min(wSize, suggestedMinimumHeight.takeIf { it > 0 } ?: wSize)
+            else min(wSize, MeasureSpec.getSize(h))
         setMeasuredDimension(size, size)
     }
 

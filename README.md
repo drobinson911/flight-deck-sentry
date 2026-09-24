@@ -24,16 +24,17 @@ Replaying the real data from that day, Sentry says:
 | 11:54:54 | info | "N388KM clear, diverging." |
 
 The first warning comes **43 seconds before the pass**. The same data run through the full selection
-path (`DemoSelectionReplayTest`, pattern `DEMO-# Pilot`; the replay drone carries the callsign
-"DEMO-1 Pilot") says "Watching DEMO-1 Pilot." at 11:51:50 and then exactly the callouts above.
+path (`DemoSelectionReplayTest`, with the replay drone's synthetic serial pinned; it carries the callsign
+"DEMO-1 Pilot") says "Watching DEMO-1 Pilot, this controller's aircraft." at 11:51:50 and then exactly the
+callouts above.
 
-With **no pattern**, Sentry protects the controller at DEMO-1's launch point (39.4290, −120.0344, 5,100 ft).
+With **no aircraft pinned** (or the pinned one not in the feed), Sentry protects the controller at DEMO-1's launch point (39.4290, −120.0344, 5,100 ft).
 N388KM passed about 2,700 ft above that point, so a 1 nm cylinder with a 1,500 ft ceiling stays silent
 (it went over the top: a test asserts this), and a 1 nm SFC–3,000 ft cylinder gives:
 
 | Replay time (PDT) | Severity | Spoken |
 |---|---|---|
-| 11:51:55 | info | "No drone selected. Protecting this controller." |
+| 11:51:55 | info | "No aircraft pinned. Protecting this controller." (pinned but absent: "Waiting for this controller's aircraft.") |
 | 11:53:03 | **warning** | "Warning. Traffic, N388KM, southwest, 2.6 miles, 2,700 above, converging, closest 2,500 feet in 52 seconds." |
 | 11:53:23 | **warning** | "Traffic entering TFR 0/0000, N388KM, southwest, 1.8 miles, 2,700 above, converging." |
 | 11:53:41 | **warning** | "Traffic entering ops area, N388KM, south, 6,000 feet, 2,700 above, converging." |
@@ -60,7 +61,7 @@ ForeFlight or anything else.
 |---|---|---|---|
 | Drone position (primary) | `GET {worker}/api/live/our-drones` + `X-Fleet-Token` | 2 s | Flight Deck Air ingest shape (`drone.id/callsign`, `pos.lat/lon/altMslFt/altAglFt`, `_ageMs`). Its `airsense[]` contacts are used as a **third traffic source**. |
 | Drone position (primary, 2nd feed) | `GET {worker}/api/live/dronesense` + `X-Fleet-Token` | 2 s | DroneSense `with-sensors` elements (`callSign`, `latitude/longitude`, `altitudeMsl/Agl` in **metres**, `lastUpdate` in unix **seconds**). This is where a DroneSense-flown drone shows up. `rtsp_url` is never read. |
-| No drone selected | This controller's GPS (GPS + network providers) | 1 s | Sentry protects the pilot's **cylinders around the controller** (see below). Spoken: "No drone selected. Protecting this controller." |
+| This controller's aircraft not in the feed (or none pinned) | This controller's GPS (GPS + network providers) | 1 s | Sentry protects the pilot's **cylinders around the controller** (see below). Spoken: "Waiting for this controller's aircraft." / "No aircraft pinned. Protecting this controller." |
 | Traffic A: truck station | `GET http://<station>:8080/data/aircraft.json` (Overwatch, readsb shape) | 1 s | Typed URL **and** Overwatch UDP beacon auto-discovery (port 41120). Off by default. "Station link lost / regained" is spoken. |
 | Traffic B: cloud | `GET {worker}/api/live/adsb` (browser User-Agent) | 5 s | About 1,000 aircraft nationwide, filtered to 30 nm around the drone. |
 | TFRs | `GET {worker}/api/tfrs` | 10 min | GeoJSON; `NOTAM_NUMBER`, `_ALT_L/H_VAL/UOM/CODE` (ALT=MSL, HEI=AGL, FL). Last good copy cached on disk. |
@@ -70,48 +71,36 @@ ForeFlight or anything else.
 hex, and the fresher **position** wins. Ages come from each feed's *relative* fields
 (`seen_pos`, `_ageMs`), so a laptop with a wrong clock can't make stale data look fresh.
 
-## Which drone Sentry protects (re-evaluated every second)
+## Which aircraft Sentry protects: this controller's aircraft, else the controller (v0.3.3)
 
-Settings → **Drone selection**:
+Owner, 2026-09-24: "just serial number or controller as a fallback", "needs to be a constant, per controller.
+We can't have the pilot thinking his drone is protected but really it's protecting another."
 
-- **This controller's aircraft (serial)** (v0.3). Type the airframe serial once, or tap **Use the drone I'm
-  watching now** to copy the `serial` of the drone Sentry is watching. The field autocompletes from every
-  serial Sentry has seen. It is kept until you clear it, and the main screen shows it as
-  "Pinned: 1581F7K3C251F00C9B34 · DEMO-1 Pilot" (the serial and the last callsign seen with it).
-  The pinned airframe is watched **first**: airborne, else on the pad, ahead of any callsign or serial match.
-  Sentry says "Watching DEMO-1 Pilot, this controller's aircraft." If a *different* drone matches the pattern
-  at the same time, the pin still wins, and Sentry says "Pinned aircraft wins." once. When the pinned airframe
-  isn't in the feed, Sentry falls back through the rules below, but it checks for the pinned airframe every second and
-  switches to it as soon as it appears ("Now watching DEMO-1 Pilot, this controller's aircraft.").
-- **My callsign pattern**, e.g. `DEMO-# Pilot`. `#` = one digit, `*` = anything, case-insensitive,
-  and spaces and hyphens are optional on both sides, so it matches DroneSense `callSign` "DEMO-1 Pilot"
-  and "DEMO-1 Pilot". Start with `re:` for a plain regular expression (matched anywhere in the raw
-  callsign; anchor with `^`/`$`). While you type, the field suggests every callsign Sentry has seen
-  (live this run + a persisted history with last-seen time; `/api/live/drone-ids` carries only ids, so it
-  is not used), and a line under it shows which known callsigns the pattern matches.
-- **My aircraft serials** (comma/newline separated, autocompleted from history): used when the pattern
-  matches nothing airborne.
-- **Protect this controller** (switch, also in the main screen's **Drone…** list, which also lets you
-  pick any known callsign).
-
-Order: **the pinned serial** (airborne, else on the pad) → an airborne drone matching the pattern → an airborne drone on the serial list → a matching
-drone that is still on the pad → **this controller**. Airborne = AGL ≥ 5 ft or speed ≥ 0.5 m/s (a
-feed that gives neither counts as airborne). Within a tier the freshest `lastUpdate` wins ("Multiple
-matches, watching …"), and Sentry then stays on that drone while it remains in the best tier (no
-flapping). A matching drone that appears later is picked up ("Watching …" / "Now watching …"; "… by
-serial" for a serial match).
-
-The watched drone going stale: after 15 s "Drone position lost"; after 30 s Sentry falls back to the
-controller cylinders and says "No drone position for 30 seconds. Protecting this controller."; when a
-matching drone is fresh again it says "Watching …" and goes back to it. The main screen shows the
-selection mode (PINNED / CALLSIGN / SERIAL / CONTROL) and the controller GPS age and accuracy, computed from live
-state every tick.
+- **Settings → This controller's aircraft:** type the airframe serial once (it autocompletes from every serial
+  Sentry has seen), or tap one of the **aircraft in the feed now** (serial · callsign · model) to pin it. It is kept
+  until you clear it.
+- **Pinned and in the feed** (airborne, else on the pad): Sentry protects **that aircraft only**. "Watching DEMO-1
+  Pilot, this controller's aircraft."
+- **Pinned but not in the feed:** the banner reads "WAITING FOR THIS CONTROLLER'S AIRCRAFT · <serial>". Sentry says
+  "Waiting for this controller's aircraft." once when armed and once each time the aircraft drops out, and the
+  **controller cylinders** protect the pilot meanwhile. It switches to the aircraft the moment it appears.
+  **No other drone is ever watched**, however close or airborne: there is no callsign pattern, serial list or picker.
+- **Nothing pinned:** the controller cylinders only. "No aircraft pinned. Protecting this controller."
+- The main screen always shows what this controller is bound to: "Bound to: <serial> · <callsign>", or "NO
+  AIRCRAFT PINNED — protecting this controller only (Settings)". The Sources table has a Selection row (BOUND /
+  WAITING / CONTROL).
+- Drop-out timing: after 15 s without a position the engine says "Drone position lost". After 30 s Sentry switches to
+  the cylinders and says "Waiting for this controller's aircraft." The aircraft is acquired again only on a fresh
+  report (15 s old or newer).
+- The **Drone feed** row always says why there are no drones: "NO TOKEN: paste the fleet token in Settings",
+  "TOKEN REJECTED (HTTP 401): check the fleet token", "feed error: …", or "no drones in feed".
 
 ## Controller protection cylinders
 
-Settings → **Controller protection**: any number of cylinders, each with a name, radius (nm or ft),
-floor and ceiling in **ft above the controller** (default) or **ft MSL**, and an on/off switch. Defaults:
-"ops area" 1 nm SFC–1,500 ft and "advisory area" 3 nm SFC–3,000 ft. While protecting the controller:
+Settings → **Controller cylinders**: any number of cylinders, each with a name, radius (nm or ft),
+floor (default **SFC**, the surface) and ceiling in **ft above the controller** (default) or **ft MSL**, and an
+on/off switch. Defaults: "ops area" 1 nm SFC–1,500 ft and "advisory area" 3 nm SFC–3,000 ft. They are used while
+the pinned aircraft is not in the feed, or when none is pinned:
 
 - The drone rings are replaced by the cylinders (the radar draws them around a square "controller" mark).
 - **Entry:** "Traffic entering ops area, N388KM, south, 6,000 feet, 2,700 above, converging." (caution,
@@ -126,12 +115,32 @@ floor and ceiling in **ft above the controller** (default) or **ft MSL**, and an
 
 ## Alert rules (pure Kotlin, `core/`, unit-tested)
 
-- **Rings around the drone:** 3 nm advisory, 1 nm caution, 0.5 nm warning, within ±2,000 ft (all configurable).
-- **Predictive:** if the closest point of approach within 60 s falls inside the 0.5 nm ring and inside the vertical band, a **warning is issued now**.
+- **Rings around the drone:** 3 nm advisory, 1 nm caution, 0.5 nm warning (all configurable). **Vertically, from the
+  surface up to 2,000 ft above the drone** (Settings → "Ceiling above aircraft", v0.3.3; it was a symmetric ±2,000 ft
+  band before). Owner: "we never want anything flying under us". Anything below the drone is inside, however far
+  below; unknown altitude is inside. So a target 3,000 ft below at 0.4 nm is a warning, and 3,000 ft above is silent.
+- **Predictive:** if the closest point of approach within 60 s falls inside the 0.5 nm ring, with the aircraft inside
+  that volume now or at the CPA, a **warning is issued now**.
 - **TFR / geofence entry:** a transition from outside to inside, when the aircraft's altitude is inside the zone's floor/ceiling. **Unknown altitude counts as inside** and is spoken as "altitude unknown". Only TFRs within 10 nm of the drone are watched.
 - **What is spoken:** cardinal direction from the drone (north … northwest); distance in nautical miles to one decimal, or in feet under 1 nm; "N hundred above/below"; converging / diverging / passing (from the range rate). Callsigns are spelled out ("N 3 8 8 K M") so they carry over rotor and road noise.
 - **Tones:** a different tone per severity plays before the speech.
-- **Rate limits:** a target is re-announced at most every 20 s (30 s for advisory), immediately when it escalates, and **once** when it clears ("N388KM clear, diverging"). A target that is already diverging is not re-announced every 20 s.
+- **Callout cadence, per aircraft (as implemented and unit-tested):**
+  - **Ring escalation** (none → advisory → caution → warning, or a predictive warning) is spoken **immediately**.
+  - **Same level, still inside:** repeated at most every **20 s** for caution and warning, **30 s** for advisory, and
+    **not at all while the aircraft is diverging** (moving away). Dropping to a lower level is silent.
+  - **Zone entry** (TFR, geofence, controller cylinder): **one** "Traffic entering …" callout on the outside-to-inside
+    transition ("inside" when it is first seen already in). Re-entering the same zone within 20 s is not re-announced.
+    Inside a controller cylinder the aircraft is at caution, so after the entry callout it is repeated every 20 s
+    (not while diverging) as "Caution. Traffic, …". A predicted pass inside 0.5 nm escalates it to warning at once.
+    For example, entry at 0 s, repeats at 20 s and 40 s, then "clear" when it leaves (`cylinderCadenceEntryThenEvery20sThenClearOnce`).
+  - **Clear:** **once**, when it leaves every ring or cylinder, with 0.2 nm and 200 ft exit hysteresis: "N388KM clear" or
+    "N388KM clear, diverging".
+  - **Gone:** "track lost" once for a target that disappears after being called, or "on the ground" when it lands.
+  - **Voice queue:** at most one waiting callout per aircraft (a newer one replaces an unspoken older one), in
+    priority order. A callout that has waited more than 15 s is dropped, and one already playing is not interrupted.
+- **Targets shown** (list and compass only; alerts are unaffected): within **10 nm of this controller's aircraft**
+  when it is watched, else within **15 nm of the controller**, and hidden above **18,000 ft** (GPS altitude, else
+  baro; unknown altitude stays shown). All three are settings. An aircraft Sentry is alerting on is always shown.
 - **Stale data is never announced:** targets whose `seen_pos` is over 30 s old are dropped. Sentry says "Traffic data stale" once when all traffic sources are more than 30 s old, "Drone position lost" when the drone's position is more than 15 s old (then "regained"), and "track lost" or "on the ground" for a target it had been calling.
 - **Ground mode at speed:** `alt_baro:"ground"` with a speed of 50 kt or more is treated as **airborne, altitude unknown**. It is never dropped as ground traffic. (This is the N388KM lesson.)
 - **Altitude:** `alt_geom` is used when present. Otherwise `alt_baro` + 300 ft, labelled "estimated" (≈) on screen. The drone's altitude is MSL from the feed.
@@ -145,17 +154,49 @@ floor and ceiling in **ft above the controller** (default) or **ft MSL**, and an
    Or, with USB debugging on (Settings → About → tap Build number 7x → Developer options): `adb install -r flight-deck-sentry.apk`.
 3. **Coming from 0.2.0 or older? Uninstall Sentry once first.** Those builds were signed with a throwaway CI debug
    key, and Android refuses to install a differently-signed APK over them (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`,
-   see `docs/install-0.3.0-over-0.2.0.txt`). Uninstalling also clears Sentry's settings, so write down your pattern and
+   see `docs/install-0.3.0-over-0.2.0.txt`). Uninstalling also clears Sentry's settings, so write down your pinned serial and
    cylinders first. From 0.3.0 onward every release uses the same key and installs in place.
 4. Open **Flight Deck Sentry** → **Settings**. Paste the fleet token (release APKs have none built in). Set
-   **This controller's aircraft (serial)** and/or **My callsign pattern** (e.g. `DEMO-# Pilot`), and check the
+   **This controller's aircraft** (type the serial, or tap it in the list of aircraft in the feed now), and check the
    **controller cylinders**. Optionally turn on the truck station.
 5. Tap **ARM**. Allow notifications and location (the controller's GPS is the fallback protected position). Accept the **battery-optimisation exemption** so Android doesn't throttle Sentry with the screen off.
 6. Tap **Test callout** to set the volume. Then switch to DroneSense: Sentry keeps running and its banners appear over DroneSense.
 
-**Screen:** the RC Plus panel is 1920×1200 px at about 320 dpi, which is about 960×600 dp. Below 1000 dp wide, Sentry
-uses a compact layout: a smaller compass with the drone panel under it, ARM on its own row, smaller type, and
-Settings in one scrolling column. Button labels shrink to fit and never truncate (since 0.3.2).
+**Screen:** the RC Plus panel is 1920×1200 px and runs at **density 2.5 (400 dpi)**, which is about **768×480 dp**.
+An emulator at 400 dpi reproduces the owner's photo of 0.3.1 exactly: "AR", "T", "Dr", "Sett". Below 1000 dp wide,
+Sentry uses a compact layout: a smaller compass with the drone panel under it, and smaller type. Since 0.3.3 the
+**action bar (ARM/DISARM · Test · Settings) is pinned at the bottom**, outside any scroll container, and each of the
+three columns above it scrolls on its own when its content is taller than the screen. Settings is one scrolling
+column with Back/Save pinned at the top. Its order is: alert rings (and targets shown), controller cylinders, this
+controller's aircraft, then feeds, voice, geofences, background, app update, and the replay last.
+
+## Coexistence with DroneSense (v0.3.3)
+
+Owner: "make sure this software never impacts DroneSense on the controller while we're flying."
+
+- **Never takes the foreground.** The service launches no activity, and alerts are heads-up notifications and
+  speech only (no full-screen intents, no dialogs). The main screen comes forward only when the pilot taps
+  Sentry's notification or icon. Verified: armed, replaying at 1×, with another app in front for 3 minutes,
+  `mResumedActivity` was that app in all 36 samples (`docs/coexistence-resumed-activity-3min.txt`).
+- **Updates never install while armed.** "Download and install" says "Disarm Sentry first" and does nothing. If
+  the pilot arms while a download is running, the installer is not opened, the session is abandoned, and the update
+  waits. The update-available notification is on a low-importance (silent) channel.
+- **Audio:** focus is `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` (never `GAIN`), requested for one callout (tone + words)
+  and released right after it, so DroneSense only ducks while Sentry is talking. There is no media session.
+- **No prompts while armed.** Permission prompts appear on the ARM tap, before arming, and arming happens after
+  the dialog closes. The battery-optimisation prompt is only in Settings.
+- **CPU, battery, network:** the pollers run the station every 1 s, the fleet every 2 s, cloud ADS-B every 5 s and
+  TFRs every 10 min, each with capped backoff. The tick is 1 s and the watchdog 5 s; nothing wakes more often than once
+  a second. There is one OkHttp client with 4/6/8 s timeouts and connection reuse. UI work runs only while the main
+  screen is visible. Measured on the Android 10 AVD at 400 dpi, armed live for 5 minutes with another app in front:
+  **3.3–3.4 % of one core (0.8 % of the device)**, and **PSS 103 MB on average** for the service alone (138 MB in
+  a process that had drawn the UI). RSS was higher (184 MB on average) because it counts shared framework pages: on
+  the same image `com.android.phone` shows 138 MB RSS for 32 MB PSS. Details are in `docs/perf-armed-5min-rc-plus-29.txt`.
+- **No USB, serial or DJI SDK access**, and no USB permissions in the manifest.
+- **Crash isolation:** every poll and every tick catches its own exceptions and shows them as a health line.
+  Feed JSON nested more than 64 deep is refused before it reaches the parser, which had thrown `StackOverflowError`
+  on such input (found by `MalformedPayloadTest`). Each parser is tested against malformed and wrong-shape payloads.
+
 
 ## Updating
 
@@ -203,21 +244,20 @@ signed with it too**, so a local build and a GitHub release can install over eac
 
 ## Settings
 
-This controller's aircraft (serial) · app update (check, notes, download and install) · Fleet token (paste from the clipboard) · callsign pattern (autocomplete) · serial allowlist · protect this controller · pick a drone · worker URL · truck station on/off + address + beacon auto-discover · cloud on/off · traffic radius · advisory/caution/warning rings · vertical band · baro correction · predictive look-ahead · TFR watch distance · voice on/off + volume · controller cylinders (add / edit / delete) + controller elevation override · circle geofence · GeoJSON geofence import · re-arm after reboot · battery exemption · **Replay: demo encounter** (1× / 4×, optional public-feed view).
+In this order: advisory/caution/warning rings · ceiling above aircraft · baro correction · predictive look-ahead · TFR watch distance · targets shown (10 nm around the aircraft / 15 nm around the controller / 18,000 ft ceiling) · controller cylinders (add / edit / delete) + controller elevation override · **this controller's aircraft** (serial, autocomplete, tap-to-pin list of aircraft in the feed now) · fleet token (paste from the clipboard) + worker URL · truck station on/off + address + beacon auto-discover · cloud on/off · traffic radius · voice on/off + volume · circle geofence · GeoJSON geofence import · re-arm after reboot · battery exemption · app update (check, notes, download and install; never while armed) · **Replay: demo encounter** (1× / 4×, optional public-feed view).
 
 ## Replay mode
 
 Settings → **Replay: demo encounter** plays the real DEMO-1 and N388KM tracks and the
 TFR 0/0000 polygon, bundled in `app/src/main/assets/replay/`, through the **same selector,
 engine, voice, and notification path** used live. The replay drone is "DEMO-1 Pilot", and the
-simulated controller sits at DEMO-1's launch point, so the Settings pattern decides whether the
-replay watches DEMO-1 or protects the controller cylinders. A replay clock is shown in PDT. From adb
+simulated controller sits at DEMO-1's launch point. Pin the replay drone's synthetic serial to watch DEMO-1;
+otherwise the replay protects the controller cylinders. A replay clock is shown in PDT. From adb
 (debug builds only):
 
 ```
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 1
 adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 4 --ez cloud_view true
-adb shell "am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --es pattern 'DEMO-# Pilot' --ez protect_controller false"
 adb shell "am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action set --es pinned 1581F7K3C251F00C9B34"
 ```
 
@@ -228,7 +268,7 @@ this placeholder is not DEMO-1's real one. It exists so you can pin the replay d
 ## Build & test
 
 ```
-./gradlew testDebugUnitTest   # runs :core:test (engine, geodesy, CPA, parsers, demo replay, selection, updater) + app tests
+./gradlew testDebugUnitTest   # runs :core:test (engine, geodesy, CPA, parsers + malformed payloads, demo replay, selection, target display, fleet status, updater) + app tests
 ./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew assembleRelease     # needs the release key (see "Releasing"); fails clearly without it
 ./gradlew assembleDebug -PsentryVersion=0.2.9   # a local build with another version (used to test the updater)
@@ -239,9 +279,21 @@ Copy `secrets.properties.example` to `secrets.properties` (gitignored) to bake i
 
 ## Screenshots
 
+**RC Plus screen profile (use it for every UI change):** AVD `rc-plus-29`: 1920×1200, `hw.lcd.density=400`,
+landscape, **Android 10 (API 29)**, default font scale (recipe in `.claude/memory/reference_sentry_emulator.md`).
+Screenshots 37–56 use it. 37 is 0.3.1 at 400 dpi, matching the owner's photo ("AR", "T", "Dr", "Sett"). 38 is 0.3.1
+armed with the buttons pushed off-screen, and 39 is the same screen after a swipe, which does not scroll (the stuck
+state the owner hit). 40–47 are the first pinned-bar build, which still had the Drone… button (removed later in 0.3.3). 40–41 are before
+and after a swipe on every column, 42 is armed with DISARM reachable, 43–45 are Settings top, after a swipe and at the
+bottom, 46 is that build's picker, and 47 is the replay with callouts. v0.3.3: 48 no aircraft pinned, 49–50 the rings and targets-shown settings at the top, 51 the
+tap-to-pin list (mock feed, synthetic serials), 52 waiting for this controller's aircraft while another drone is in
+the feed, 53 the pinned aircraft appearing, 54 the Drone feed row with a rejected token, 55 "no drones in feed" and the
+drop-out to waiting, and 56 the replay with the targets list filtered to 10 nm of the aircraft. 57 is the old 240 dpi
+profile on 0.3.3.
+
 `docs/screenshots/` 01–26: emulator at 1920×1200 / 240 dpi (AVD `sentry-rc`, 1280×800 dp). **That profile was
-wrong for the RC Plus.** Its 7" 1920×1200 panel runs at about 320 dpi (density 2.0), so an app gets only about
-**960×600 dp**. Screenshots 27–36 use the matching AVD `rc-plus` (1920×1200, `hw.lcd.density=320`):
+wrong for the RC Plus.** 27–36 (0.3.2) used 320 dpi (about 960×600 dp), which was still not dense enough;
+the controller behaves as 400 dpi, as above. 27–36 used AVD `rc-plus` at 320 dpi:
 27 is 0.3.1 on it, reproducing the truncated buttons from the owner's photo of the real controller ("Tes", "Dron",
 "Settin"; the controller itself showed "AR", "T", "Dr", "Sett"). 28–33 are 0.3.2 on the same AVD: disarmed (28), the
 demo replay with callouts (29), Settings top and bottom in one column (30, 31), the Drone… picker (32), and
@@ -261,13 +313,14 @@ callsigns in 13, 15, 18 and 20 came from a **mock** DroneSense feed on the emula
 
 ```
 core/  pure Kotlin/JVM: Geo, CpaMath, AlertEngine, HealthMonitor, Parsers, TrafficMerger, Replay,
-       Selection (CallsignPattern, DroneSelector incl. pinned serial, Cylinder, KnownDrones),
+       Selection (DroneSelector: pinned serial else controller, Cylinder, KnownDrones), FleetStatus
+       (why the Drone feed shows no drones), TargetDisplay (what the list and compass show),
        Update (SemVer, Releases JSON, UpdatePolicy) (+ tests)
 app/   SentryService (FGS, pollers, watchdog, replay), AlertVoice (TTS+tones+ducking),
-       Notifier (status + heads-up + update), MainActivity, SettingsActivity, DronePicker, DroneHistory,
+       Notifier (status + heads-up + update), MainActivity, SettingsActivity, DroneHistory,
        Updater (GitHub check, download, PackageInstaller session), UpdatePrompt, RadarView, BootReceiver,
        ScreenLayout (compact vs wide layout by width in dp; unit-tested)
-VERSION                        the one version source (0.3.0 -> versionCode 300)
+VERSION                        the one version source (0.3.3 -> versionCode 303)
 .github/workflows/android.yml  every push: tests + debug APK artifact
 .github/workflows/release.yml  tag v*: tests + signed release APK attached to the GitHub release
 docs/  DESIGN.md, screenshots, replay logs

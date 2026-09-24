@@ -58,6 +58,7 @@ class ParsersTest {
         assertEquals(8045.0, d.altMslFt!!, 0.0)
         assertEquals(now - 1200, d.posTimeMs)
         assertEquals(OwnshipSource.FLEET_FDA, d.source)
+        assertEquals("M4T", d.model)
         val a = p.airsense.single()
         assertEquals("a479ef", a.hex); assertEquals(setOf("airsense"), a.sources)
         assertEquals(33.0, a.trackDeg!!, 0.0)
@@ -70,12 +71,13 @@ class ParsersTest {
 
     @Test fun droneSenseSnapshot() {
         val j = """{"ts":1790189600000,"body":[{"id":"ds-1","callSign":"DEMO-1","latitude":39.4135,"longitude":-120.0432,
-            "altitudeMsl":2452.1,"altitudeAgl":880.0,"lastUpdate":1790189598,"sensors":[{"rtsp_url":"rtsps://u:p@h/s"}]}]}"""
+            "altitudeMsl":2452.1,"altitudeAgl":880.0,"lastUpdate":1790189598,"model":"Matrice 4T","serial":"1581TEST","sensors":[{"rtsp_url":"rtsps://u:p@h/s"}]}]}"""
         val d = Parsers.parseDroneSense(j, now).single()
         assertEquals("DEMO-1", d.name)
         assertEquals(8045.0, d.altMslFt!!, 0.5)
         assertEquals(1790189598000L, d.posTimeMs)
         assertEquals(OwnshipSource.FLEET_DRONESENSE, d.source)
+        assertEquals("Matrice 4T", d.model); assertEquals("1581TEST", d.serial)
         assertTrue(Parsers.parseDroneSense("""{"ts":1,"body":[]}""", now).isEmpty())
         assertTrue(Parsers.parseDroneSense("""{"ts":0,"body":null}""", now).isEmpty())
     }

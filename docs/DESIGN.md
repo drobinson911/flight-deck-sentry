@@ -23,10 +23,9 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
 ## Redundancy (stacked, never either/or)
 
 - **Ownship:** Sentry polls our-drones (Flight Deck Air) **and** the DroneSense snapshot
-  every 2 s; the `DroneSelector` picks the drone by callsign pattern, then serial (see
-  "Drone selection" below). With no drone selected, Sentry protects cylinders around the
-  controller's own GPS, and every switch is spoken. (v0.1's manual pin was removed in v0.2:
-  the owner chose controller-centred protection as the only fallback.)
+  every 2 s; the `DroneSelector` watches this controller's pinned aircraft (by serial) and
+  nothing else (v0.3.3, see below). When it is not in the feed, or none is pinned, Sentry protects
+  cylinders around the controller's own GPS, and every switch is spoken.
   Why both fleet feeds: while DroneSense flies the drone, Flight Deck Air *can't* run
   (MSDK), so the DroneSense snapshot is the feed that will normally carry the drone. This
   was confirmed live on 2026-09-23: DEMO-2 showed up via `/api/live/dronesense` while
@@ -80,7 +79,7 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
 - **Velocity from history.** When `track` is missing (it was null for N388KM throughout),
   velocity is taken from the last two positions (0.5 to 30 s apart). The drone's own
   velocity also comes from its history and is used in the relative motion for CPA.
-- **Hysteresis.** A ring has to be exceeded by 0.2 nm, and the vertical band by 200 ft,
+- **Hysteresis.** A ring has to be exceeded by 0.2 nm, and the ceiling above the drone by 200 ft,
   before the severity drops. This stops a target on a ring edge from flapping.
 - **De-escalation is silent.** The re-announce interval then applies at the new level.
   Targets that are **diverging** aren't re-announced; they get their "clear" when they
@@ -110,6 +109,10 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
   *inside* TFR …", which is truthful: the entry itself wasn't observed.
 
 ## Drone selection and controller protection (v0.2, 2026-09-23)
+
+> **Superseded in v0.3.3:** the callsign pattern, serial allowlist, picker and "protect this controller" switch
+> were removed. Selection is now the pinned serial, else the controller (see "Bound to one aircraft" below).
+> The controller cylinders, the drop-out hold and the controller-GPS rules below still apply.
 
 Owner's decision: "yes on your callsign thing, but for fallback just offer to run the
 protection around the controller, have the user fill out info for the cylinder(s), yes on
@@ -150,6 +153,9 @@ protection around the controller, have the user fill out info for the cylinder(s
   both requested, freshest wins); the UI shows its real age and accuracy.
 
 ## Pinned serial, self-update, release signing (v0.3, 2026-09-24)
+
+> **Selection part superseded in v0.3.3:** the pin is no longer a top tier above other rules; it is the only drone
+> that can be watched. The self-update and signing parts below still apply, plus "never while armed" (v0.3.3).
 
 Owner: "Let's do serial number also, type it once and it knows what drone that controller
 needs to watch forever."
@@ -242,6 +248,107 @@ left panel cramped. **Root cause:** every layout had been sized on an emulator a
   Its exact display-size setting is unknown (its truncation was worse than the emulator's), which is why the decision is
   by measured dp.
 
+> **Corrected in v0.3.3:** 320 dpi was still too generous (see below). The two-row button box and the "fit whole
+> lines" callout clipping were replaced by a pinned action bar and scrolling columns.
+
+## v0.3.3 (2026-09-24): the real controller, one bound aircraft, the flight volume, coexistence
+
+### The RC Plus screen, part 2: it behaves as 400 dpi, and nothing may depend on scrolling
+
+The owner, on the real controller: "Can't scroll on Sentry, so can't disarm, select settings, etc." An AVD at
+**density 400** (1920×1200, Android 10, default font scale; AVD `rc-plus-29`) reproduces the earlier photo **exactly**
+("AR", "T", "Dr", "Sett", screenshot 37), where 320 dpi gave "Tes", "Dron", "Settin". So the app gets about
+**768×480 dp**. Armed in controller mode, 0.3.1's drone panel pushed the whole button row off the bottom (38), and the
+root `LinearLayout` could not scroll (39: a swipe changes nothing). That is the stuck state the owner hit.
+
+- **Pinned action bar.** ARM/DISARM · Test · Settings sit in a bottom bar that is a direct child of the root,
+  **outside every scroll container**. The bar is always on screen, whatever the panels contain.
+- **Every column scrolls.** Each of the three columns is its own `ScrollView` (`fillViewport`, visible scrollbar).
+  The columns are siblings, never nested, so there is no nested-scroll conflict. Verified by `adb shell input swipe` on
+  each column, with before and after screenshots (40, 41).
+- **`wrap_content` + weight inside a scroll view, never `0dp` + weight.** In a scroll view's unbounded measure pass,
+  `LinearLayout` re-shares the wrapped heights of `0dp` children by weight. That gave Targets empty space and clipped
+  Callouts below their text, where it could not be scrolled to. Found with `dumpsys activity top` bounds. With
+  `wrap_content` the weight only hands out spare height when the column fits. The compass asks only for its
+  `minHeight` (170 dp) in the unbounded pass, so it shrinks before a column starts to scroll.
+- The "fit whole lines and end in …" callout clipping from 0.3.2 was removed: callouts now scroll instead.
+- Settings: Back/Save stay pinned at the top and the page scrolls. The order is rings (and targets shown),
+  cylinders, this controller's aircraft, then everything else, with the replay last.
+
+### Bound to one aircraft (selection is the pinned serial, else the controller)
+
+Owner: "I don't want it to pick another variable, needs to be a constant. We can't have the pilot thinking his drone is
+protected but really it's protecting another. Needs to be a fixed setting, per controller." And: "just serial number
+or controller as a fallback."
+
+- `DroneSelector` has exactly two outcomes: **PINNED** (the airframe whose serial matches, airborne or on the pad) or
+  **CONTROLLER**. Other drones are never candidates. The callsign pattern, serial allowlist, multi-match logic, the
+  Drone… picker and the manual "protect this controller" were **deleted**, not switched off, together with their tests.
+  The pre-0.3.3 prefs are simply no longer read.
+- Pinned but absent → `waitingForBound`: banner "WAITING FOR THIS CONTROLLER'S AIRCRAFT · <serial>", said once on arm
+  (after the 5 s start-up grace) and once per drop-out (after the existing 15 s lost and 30 s fallback). The controller
+  cylinders protect the pilot meanwhile. It is re-acquired only on a fresh report (15 s old or newer).
+- "Bound to: <serial> · <callsign>" (or "NO AIRCRAFT PINNED …") is on the main screen in every state, armed or not.
+- Pinning without typing: Settings lists the **aircraft in the feed now** (serial · callsign · model, from one fleet
+  fetch when Settings opens, or "Refresh list"). Tapping one pins it. `model` was added to `Ownship` (FDA
+  `drone.model`, DroneSense `model`).
+- Tests (`PinnedSelectionTest`, `DemoSelectionReplayTest`): present airborne and on the pad; absent → controller
+  for 600 s with another airborne drone in the feed, which is never watched; appears an hour later → bound at once;
+  drop-out → waiting → back; and a demo run bound to an absent airframe gives exactly the nothing-pinned cylinder
+  callouts and never watches DEMO-1. A mutation that lets a pattern match while bound fails 5 tests.
+
+### The flight volume: surface up to X ft above the drone
+
+Owner: "we never want anything flying under us." `SentryConfig.ceilingAboveFt` (default 2,000; Settings "Ceiling above
+aircraft") replaces the symmetric ±`verticalBandFt`. A target is inside when `dv <= ceiling (+200 ft hysteresis once
+alerting)`, with no lower limit; unknown altitude is inside. The predictive rule uses the same test on the smaller
+of "now" and "at CPA". Tests: 3,000 ft below at 0.4 nm → WARNING, 3,000 ft above → silent, the same pair for the
+predictive rule, and the ceiling as a setting. Restoring `abs(dv)` fails 2 of them. The demo callouts are
+unchanged (N388KM was within a few hundred feet of DEMO-1). Cylinder floors default to SFC, shown as "SFC".
+
+### What the Targets list and compass show
+
+`TargetDisplay.filter` (pure, tested): within 10 nm of the watched aircraft, or 15 nm of the controller when protecting
+it, and hidden above 18,000 ft judged on `alt_geom`, else `alt_baro`. Unknown altitude stays shown. All three are
+settings. **An aircraft at advisory or worse is always shown**, whatever the filter, so the screen never hides what
+Sentry is talking about. The engine still evaluates everything within the traffic radius, so alerts are unaffected.
+The label says so: "Targets · 1 within 10 nm of aircraft · ≤18,000 ft · 16 hidden".
+
+### Why the Drone feed is empty
+
+The owner lost an hour to a missing token. `FleetStatus.of` (pure, tested) turns the two fleet fetches into one reason:
+"NO TOKEN: paste the fleet token in Settings", "TOKEN REJECTED (HTTP 401|403): check the fleet token",
+"feed error: …", "no drones in feed", or "N drones in feed (dronesense: HTTP 500)". The Sources row shows it, up to
+60 characters, wrapped instead of cut, and so does Settings under the aircraft list.
+
+### Coexistence with DroneSense
+
+Owner: "make sure this software never impacts DroneSense on the controller while we're flying."
+
+- No activity is ever started by the service, the boot receiver or a notification action. Alerts are heads-up
+  notifications (no full-screen intent) and speech. The main screen comes forward only from the pilot's own tap on
+  Sentry's notification (`PendingIntent` to `MainActivity`, `SINGLE_TOP`) or icon. Checked: armed + replay with the
+  Android Settings app in front, `mResumedActivity` sampled every 5 s for 3 min was Settings in 36/36 samples
+  (`docs/coexistence-resumed-activity-3min.txt`).
+- The updater never opens the installer while armed. `startUpdate` refuses with a toast, `downloadAndInstall` refuses,
+  and the install receiver re-checks just before `startActivity`: if the pilot armed during the download, the session
+  is abandoned. The update-available notification is on a LOW (silent) channel.
+- Audio focus `GAIN_TRANSIENT_MAY_DUCK`, requested per callout and released right after it. It used to be held
+  across a whole queue. No media session.
+- No prompts while armed: permissions are requested on the ARM tap and arming happens in
+  `onRequestPermissionsResult`. The battery-optimisation request moved to Settings only.
+- Crash isolation: per-poll `catch (Exception)` plus `catch (StackOverflowError)`, and `Parsers.parse` refuses JSON
+  nested deeper than 64. `MalformedPayloadTest` found that `[[[[…` made the JSON library throw `StackOverflowError`, an
+  Error the poll catch did not stop, so a hostile or corrupt payload could have killed the process. Every parser is
+  now tested with non-JSON (only an ordinary Exception may escape) and wrong-shape JSON (parses to nothing).
+- Resource use (Android 10 AVD at 400 dpi, 4 vCPU, software GL; armed live 5 min, another app in front):
+  **3.3 % of one core** (0.8 % of the device); **PSS 103 MB on average** for a service-only process (76 MB at the end
+  of the window), 138 MB for a process that had drawn the UI (hwui native heap under software GL; not measured on
+  real hardware). RSS averaged 184 MB, but RSS counts shared framework pages (`com.android.phone`: 138 MB RSS for
+  32 MB PSS on the same image), so it can't meet a 120 MB target for any app here. Full log:
+  `docs/perf-armed-5min-rc-plus-29.txt`.
+- No USB, serial or DJI SDK code or permission.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with
@@ -272,8 +379,8 @@ left panel cramped. **Root cause:** every layout had been sized on an emulator a
 
 ## Debug-only adb hooks
 
-`MainActivity` accepts `--es sentry_action replay|test|set` (`set` takes `pattern`, `serials`,
-`pinned`, `protect_controller`, `station`, `station_url`, `worker`, `elev`) **only when
+`MainActivity` accepts `--es sentry_action replay|test|set` (`set` takes `pinned`, `station`,
+`station_url`, `worker`, `elev`) **only when
 `BuildConfig.DEBUG`**, for scripted demos. It will never disarm Sentry. Release builds
 ignore it.
 

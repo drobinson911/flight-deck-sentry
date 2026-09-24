@@ -25,8 +25,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Tone + speech for every callout.
  *
  * - Audio attributes USAGE_ASSISTANCE_NAVIGATION_GUIDANCE and focus
- *   AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK, so DroneSense's audio ducks under us
- *   instead of being paused or fighting us.
+ *   AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK (never GAIN), requested for ONE callout
+ *   (tone + words) and released as soon as it is spoken, so DroneSense's audio
+ *   ducks only while Sentry is actually talking. No media session.
  * - A distinct tone per severity plays BEFORE the words.
  * - Queue is priority-ordered, one pending item per aircraft (a newer callout
  *   about N388KM replaces an unspoken older one), and anything older than
@@ -104,7 +105,6 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
     private suspend fun loop() {
         while (true) {
             signal.receive()
-            var hadFocus = false
             while (true) {
                 val item = synchronized(pending) { if (pending.isEmpty()) null else pending.removeAt(0) } ?: break
                 if (System.currentTimeMillis() - item.enqueuedMs > 15_000) {
@@ -112,16 +112,17 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
                     continue
                 }
                 if (!enabled) { SentryBus.log("MUTED [${item.ev.severity.label}] ${item.ev.speech}"); continue }
-                if (!hadFocus) {
-                    // Ducking is best-effort: we speak even if focus is refused.
-                    val g = am.requestAudioFocus(focusReq)
-                    if (g != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) SentryBus.log("Voice: audio focus not granted ($g)")
-                    hadFocus = true
+                // Ducking is best-effort: we speak even if focus is refused. Focus is held for this one
+                // callout only and released right after it, never across the queue.
+                val g = am.requestAudioFocus(focusReq)
+                if (g != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) SentryBus.log("Voice: audio focus not granted ($g)")
+                try {
+                    playTone(item.ev.severity)
+                    speak(item.ev)
+                } finally {
+                    am.abandonAudioFocusRequest(focusReq)
                 }
-                playTone(item.ev.severity)
-                speak(item.ev)
             }
-            if (hadFocus) am.abandonAudioFocusRequest(focusReq)
         }
     }
 

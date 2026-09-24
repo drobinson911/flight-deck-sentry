@@ -44,8 +44,16 @@ data class UiState(
     // ── selection (callsign / serial / controller) ──
     val selectionMode: SelectionMode? = null,
     val selectionNote: String = "",
-    val pattern: String = "",
-    val matchCount: Int = 0,
+    /** The serial this controller is bound to (as typed), or null when none is pinned. */
+    val boundSerial: String? = null,
+    /** Bound, but the aircraft isn't being watched right now: "WAITING FOR THIS CONTROLLER'S AIRCRAFT". */
+    val waitingForBound: Boolean = false,
+    /** Targets shown: radius (around the aircraft or the controller) and ceiling, for the Targets label. */
+    val displayRadiusNm: Double = 0.0,
+    val displayAroundAircraft: Boolean = false,
+    val displayCeilingFt: Double = 0.0,
+    /** Aircraft the engine evaluated that the display filter hides (outside the radius or above the ceiling). */
+    val hiddenTargets: Int = 0,
     val controllerFix: ControllerFix? = null,
     /** Fix age at [tickMs] (sim time in a replay). */
     val controllerFixAgeSec: Double? = null,

@@ -1,212 +1,235 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Main screen. The action bar (ARM/DISARM, Test, Settings) is pinned at the bottom, OUTSIDE any
+  scroll container, so it is on screen whatever the panels contain. Each of the three columns above it is its
+  own vertical ScrollView (fillViewport: panels stretch to fill when they fit, the column scrolls when they
+  don't). The columns are siblings, never nested, so there is no nested-scroll conflict.
+  Inside the columns the stretchy panels are wrap_content + weight, NOT 0dp + weight: in a scroll view's
+  unbounded measure pass LinearLayout re-shares the wrapped heights of 0dp children by weight, which gave
+  Targets empty space and clipped Callouts below their content. With wrap_content the weight only hands out
+  spare height when the column fits.
+  The real RC Plus runs at density 2.5 (~768 x 480 dp): see ScreenLayout and docs/DESIGN.md.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
-    android:orientation="horizontal"
-    android:padding="10dp">
+    android:orientation="vertical"
+    android:padding="8dp">
 
-    <!-- Column 1: status, drone, sources, controls. Compact (< 1000 dp, e.g. the RC Plus at 320 dpi):
-         MainActivity moves the drone panel under the compass and puts ARM on its own row (ScreenLayout). -->
     <LinearLayout
-        android:id="@+id/colLeft"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1.15"
-        android:orientation="vertical">
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/banner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/panel_bg"
-            android:gravity="center_vertical"
-            android:minHeight="78dp"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="8dp"
-            android:textColor="@color/bg"
-            android:textSize="28sp"
-            android:textStyle="bold" />
+        <!-- Column 1: status, update, drone (wide only), sources -->
+        <ScrollView
+            android:id="@+id/colLeft"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.15"
+            android:fadeScrollbars="false"
+            android:fillViewport="true"
+            android:scrollbarStyle="outsideOverlay">
+            <LinearLayout
+                android:id="@+id/colLeftInner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-        <ProgressBar
-            android:id="@+id/replayProgress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="8dp"
-            android:layout_marginTop="4dp"
-            android:max="1000"
-            android:progressTint="@color/replay"
-            android:visibility="gone" />
+                <TextView
+                    android:id="@+id/banner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/panel_bg"
+                    android:gravity="center_vertical"
+                    android:minHeight="78dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="8dp"
+                    android:textColor="@color/bg"
+                    android:textSize="28sp"
+                    android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/updateBanner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/panel_bg"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="8dp"
-            android:textColor="@color/caution"
-            android:textSize="17sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
+                <ProgressBar
+                    android:id="@+id/replayProgress"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp"
+                    android:layout_marginTop="4dp"
+                    android:max="1000"
+                    android:progressTint="@color/replay"
+                    android:visibility="gone" />
 
-        <LinearLayout
-            android:id="@+id/dronePanel"
-            style="@style/Sentry.Panel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="vertical">
-            <TextView android:id="@+id/droneLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Protecting" />
-            <TextView android:id="@+id/drone" style="@style/Sentry.Value" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="24sp" android:textStyle="bold" />
-            <TextView android:id="@+id/droneDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/dim" android:textSize="16sp" />
-        </LinearLayout>
+                <TextView
+                    android:id="@+id/updateBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:background="@drawable/panel_bg"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="8dp"
+                    android:textColor="@color/caution"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
 
-        <LinearLayout
-            android:id="@+id/sourcesPanel"
-            style="@style/Sentry.Panel"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_marginTop="8dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
-            <TextView android:id="@+id/sourcesLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Sources" />
-            <TextView android:id="@+id/sources" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="monospace" android:textSize="16sp" android:lineSpacingExtra="4dp" />
-        </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/dronePanel"
+                    style="@style/Sentry.Panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical">
+                    <TextView android:id="@+id/droneLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Protecting" />
+                    <TextView android:id="@+id/drone" style="@style/Sentry.Value" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="24sp" android:textStyle="bold" />
+                    <TextView android:id="@+id/droneDetail" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/dim" android:textSize="16sp" />
+                </LinearLayout>
 
-        <!-- Labels never truncate: one line + auto-size (11-20 sp) inside a fixed-height button. -->
-        <LinearLayout
-            android:id="@+id/buttonBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:orientation="vertical">
-        <LinearLayout
-            android:id="@+id/buttonRow"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:orientation="horizontal">
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnArm"
-                style="@style/Sentry.Button"
-                app:autoSizeTextType="uniform"
-                app:autoSizeMinTextSize="11sp"
-                app:autoSizeMaxTextSize="20sp"
-                app:autoSizeStepGranularity="1sp"
-                android:layout_width="0dp"
-                android:layout_height="76dp"
-                android:layout_weight="1.05"
-                android:textSize="20sp" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnTest"
-                style="@style/Sentry.Button"
-                app:autoSizeTextType="uniform"
-                app:autoSizeMinTextSize="11sp"
-                app:autoSizeMaxTextSize="16sp"
-                app:autoSizeStepGranularity="1sp"
-                android:layout_width="0dp"
-                android:layout_height="76dp"
-                android:layout_marginStart="8dp"
-                android:layout_weight="0.8"
-                android:backgroundTint="@color/panel2"
-                android:text="Test"
-                android:textSize="16sp"
-                android:textColor="@color/ink" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnPick"
-                style="@style/Sentry.Button"
-                app:autoSizeTextType="uniform"
-                app:autoSizeMinTextSize="11sp"
-                app:autoSizeMaxTextSize="16sp"
-                app:autoSizeStepGranularity="1sp"
-                android:layout_width="0dp"
-                android:layout_height="76dp"
-                android:layout_marginStart="8dp"
-                android:layout_weight="0.9"
-                android:backgroundTint="@color/panel2"
-                android:text="Drone…"
-                android:textSize="16sp"
-                android:textColor="@color/ink" />
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSettings"
-                style="@style/Sentry.Button"
-                app:autoSizeTextType="uniform"
-                app:autoSizeMinTextSize="11sp"
-                app:autoSizeMaxTextSize="16sp"
-                app:autoSizeStepGranularity="1sp"
-                android:layout_width="0dp"
-                android:layout_height="76dp"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1.05"
-                android:backgroundTint="@color/panel2"
-                android:text="Settings"
-                android:textSize="16sp"
-                android:textColor="@color/ink" />
-        </LinearLayout>
-        </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/sourcesPanel"
+                    style="@style/Sentry.Panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView android:id="@+id/sourcesLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Sources" />
+                    <TextView android:id="@+id/sources" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="monospace" android:textSize="16sp" android:lineSpacingExtra="4dp" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Column 2: radar (compact: the drone panel moves under it) -->
+        <ScrollView
+            android:id="@+id/colCentre"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="10dp"
+            android:layout_weight="0.95"
+            android:fadeScrollbars="false"
+            android:fillViewport="true"
+            android:scrollbarStyle="outsideOverlay">
+            <LinearLayout
+                android:id="@+id/colCentreInner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+                <!-- minHeight: the size it keeps when the column has to scroll -->
+                <com.uasflightdeck.sentry.RadarView
+                    android:id="@+id/radar"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:minHeight="170dp" />
+                <TextView
+                    android:id="@+id/zones"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:textColor="@color/dim"
+                    android:textSize="16sp" />
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Column 3: targets, callouts, log -->
+        <ScrollView
+            android:id="@+id/colRight"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1.2"
+            android:fadeScrollbars="false"
+            android:fillViewport="true"
+            android:scrollbarStyle="outsideOverlay">
+            <LinearLayout
+                android:id="@+id/colRightInner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+                <LinearLayout
+                    style="@style/Sentry.Panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+                    <TextView android:id="@+id/targetsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Targets" />
+                    <TextView android:id="@+id/targets" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="monospace" android:textSize="15sp" android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+                <LinearLayout
+                    style="@style/Sentry.Panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:layout_weight="1.25"
+                    android:orientation="vertical">
+                    <TextView android:id="@+id/calloutsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last callouts" />
+                    <TextView android:id="@+id/callouts" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:lineSpacingExtra="4dp" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/log"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="monospace"
+                    android:maxLines="4"
+                    android:textColor="@color/dim"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </ScrollView>
     </LinearLayout>
 
-    <!-- Column 2: radar (compact: smaller, with the drone panel under it) -->
+    <!-- Pinned action bar: never inside a scroll container. Labels: one line, auto-size 11-20 sp. -->
     <LinearLayout
-        android:id="@+id/colCentre"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_marginStart="10dp"
-        android:layout_weight="0.95"
-        android:gravity="center_horizontal"
-        android:orientation="vertical">
-        <com.uasflightdeck.sentry.RadarView
-            android:id="@+id/radar"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-        <TextView
-            android:id="@+id/zones"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:textColor="@color/dim"
-            android:textSize="16sp" />
-    </LinearLayout>
-
-    <!-- Column 3: targets, callouts, log -->
-    <LinearLayout
-        android:id="@+id/colRight"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_marginStart="10dp"
-        android:layout_weight="1.2"
-        android:orientation="vertical">
-        <LinearLayout
-            style="@style/Sentry.Panel"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
+        android:id="@+id/buttonRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnArm"
+            style="@style/Sentry.Button"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="11sp"
+            app:autoSizeMaxTextSize="20sp"
+            app:autoSizeStepGranularity="1sp"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1.4"
+            android:textSize="20sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTest"
+            style="@style/Sentry.Button"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="11sp"
+            app:autoSizeMaxTextSize="18sp"
+            app:autoSizeStepGranularity="1sp"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_marginStart="8dp"
             android:layout_weight="1"
-            android:orientation="vertical">
-            <TextView android:id="@+id/targetsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Targets" />
-            <TextView android:id="@+id/targets" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="monospace" android:textSize="15sp" android:lineSpacingExtra="3dp" />
-        </LinearLayout>
-        <LinearLayout
-            style="@style/Sentry.Panel"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_marginTop="8dp"
-            android:layout_weight="1.25"
-            android:orientation="vertical">
-            <TextView android:id="@+id/calloutsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last callouts" />
-            <TextView android:id="@+id/callouts" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:lineSpacingExtra="4dp" />
-        </LinearLayout>
-        <TextView
-            android:id="@+id/log"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:fontFamily="monospace"
-            android:maxLines="4"
-            android:textColor="@color/dim"
-            android:textSize="11sp" />
+            android:backgroundTint="@color/panel2"
+            android:text="Test"
+            android:textColor="@color/ink"
+            android:textSize="18sp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSettings"
+            style="@style/Sentry.Button"
+            app:autoSizeTextType="uniform"
+            app:autoSizeMinTextSize="11sp"
+            app:autoSizeMaxTextSize="18sp"
+            app:autoSizeStepGranularity="1sp"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/panel2"
+            android:text="Settings"
+            android:textColor="@color/ink"
+            android:textSize="18sp" />
     </LinearLayout>
 </LinearLayout>

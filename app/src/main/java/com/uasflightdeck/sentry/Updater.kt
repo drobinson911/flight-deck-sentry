@@ -133,8 +133,16 @@ object Updater {
         Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
 
     /** Download the latest APK and hand it to the system installer. Call ONLY from a user tap. */
+    /** Armed (live or replay) = the service is running a mode, or the pilot left it armed. */
+    fun isArmed(ctx: Context) = SentryBus.state.value.mode != Mode.OFF || Settings(ctx.applicationContext).armed
+
+    fun deferWhileArmed() {
+        _state.value = _state.value.copy(downloading = false, progressPct = null, message = "Update waits until Sentry is disarmed")
+    }
+
     fun downloadAndInstall(ctx: Context) {
         val app = ctx.applicationContext
+        if (isArmed(app)) { deferWhileArmed(); return }
         val s = Settings(app)
         val rel = latest(s)
         if (rel == null || !SemVer.isNewer(rel.tag, current)) { _state.value = _state.value.copy(message = "No newer version to install"); return }
@@ -199,6 +207,14 @@ object Updater {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         val confirm: Intent? = if (Build.VERSION.SDK_INT >= 33) i.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
                             else @Suppress("DEPRECATION") i.getParcelableExtra(Intent.EXTRA_INTENT)
+                        // Re-checked at the last moment: if the pilot armed while it downloaded, the installer
+                        // screen is NOT opened over DroneSense; the session is abandoned and the update waits.
+                        if (isArmed(c)) {
+                            runCatching { c.unregisterReceiver(this) }
+                            runCatching { c.packageManager.packageInstaller.abandonSession(sessionId) }
+                            deferWhileArmed(); SentryBus.log("Update: armed meanwhile; installer not opened")
+                            return
+                        }
                         confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         runCatching { c.startActivity(confirm) }.onFailure { SentryBus.log("Update: installer UI failed: ${it.message}") }
                         // keep listening for the final status (on success this process is replaced)

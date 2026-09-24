@@ -5,7 +5,6 @@ import android.content.SharedPreferences
 import com.uasflightdeck.sentry.core.Cylinder
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SentryConfig
-import com.uasflightdeck.sentry.core.SerialList
 
 /**
  * All user settings, in plain SharedPreferences (small, synchronous, survives
@@ -20,16 +19,12 @@ class Settings(ctx: Context) {
         get() = p.getString("fleetToken", null)?.takeIf { it.isNotBlank() } ?: BuildConfig.FLEET_TOKEN
         set(v) = p.edit().putString("fleetToken", v.trim()).apply()
     val fleetTokenIsDefault get() = p.getString("fleetToken", null).isNullOrBlank() && BuildConfig.FLEET_TOKEN.isNotBlank()
-    /** Pre-0.2 substring filter; migrated into [callsignPattern] as `*filter*`. */
-    private var droneFilter by str("droneFilter", "")
-    var callsignPattern: String
-        get() = p.getString("callsignPattern", null) ?: droneFilter.takeIf { it.isNotBlank() }?.let { "*$it*" } ?: ""
-        set(v) = p.edit().putString("callsignPattern", v.trim()).apply()
-    var serials by str("serials", "")
-    /** "This controller's aircraft": airframe serial pinned to this controller, kept until the pilot clears it. */
+    /**
+     * "This controller's aircraft": the airframe serial this controller is bound to, kept until the pilot
+     * clears it. The ONLY drone Sentry will ever watch (v0.3.3); blank = protect the controller only.
+     * (The pre-0.3.3 callsignPattern / serials / protectController prefs are no longer read.)
+     */
     var pinnedSerial by str("pinnedSerial", "")
-    /** User chose "Protect this controller": ignore drones entirely. */
-    var protectController by bool("protectController", false)
     var workerBase by str("workerBase", "https://uas-app.drobinson911.workers.dev")
 
     // traffic
@@ -43,23 +38,34 @@ class Settings(ctx: Context) {
     var advisoryNm by dbl("advisoryNm", 3.0)
     var cautionNm by dbl("cautionNm", 1.0)
     var warningNm by dbl("warningNm", 0.5)
-    var verticalBandFt by dbl("verticalBandFt", 2000.0)
+    /** Protected volume: surface up to this far above the drone (v0.3.3; replaces the ± band "verticalBandFt"). */
+    var ceilingAboveFt by dbl("ceilingAboveFt", 2000.0)
     var baroCorrectionFt by dbl("baroCorrectionFt", 300.0)
     var cpaHorizonSec by dbl("cpaHorizonSec", 60.0)
     var tfrRelevanceNm by dbl("tfrRelevanceNm", 10.0)
+
+    // targets SHOWN (list + compass); alerts are unaffected
+    var targetsAircraftNm by dbl("targetsAircraftNm", 10.0)
+    var targetsControllerNm by dbl("targetsControllerNm", 15.0)
+    var targetsCeilingFt by dbl("targetsCeilingFt", 18_000.0)
+    fun targetDisplay() = com.uasflightdeck.sentry.core.TargetDisplay.Config(
+        aroundAircraftNm = targetsAircraftNm.takeIf { it > 0 } ?: 10.0,
+        aroundControllerNm = targetsControllerNm.takeIf { it > 0 } ?: 15.0,
+        ceilingFt = targetsCeilingFt.takeIf { it > 0 } ?: 18_000.0,
+    )
 
     // voice
     var voiceOn by bool("voiceOn", true)
     var volume by dbl("volume", 1.0)
 
-    // controller protection (fallback when no drone is selected)
+    // controller protection (when this controller's aircraft is not in the feed, or none is pinned)
     var cylinders: List<Cylinder>
         get() = p.getString("cylinders", null)?.let { Cylinder.fromJson(it) } ?: Cylinder.DEFAULTS
         set(v) = p.edit().putString("cylinders", Cylinder.toJson(v)).apply()
     /** Controller elevation override, ft MSL (NaN = use GPS). */
     var controllerElevFt by dbl("controllerElevFt", Double.NaN)
 
-    // callsign / serial history for autocomplete
+    // serial / callsign history for the serial autocomplete
     var knownDronesJson by str("knownDrones", "")
 
     // geofences
@@ -87,15 +93,12 @@ class Settings(ctx: Context) {
     var updateLastMessage by str("updateLastMessage", "")
     var updateNotifiedVersion by str("updateNotifiedVersion", "")
 
-    fun selectorConfig() = DroneSelector.SelectorConfig(
-        pattern = callsignPattern, serials = SerialList.parse(serials), pinnedSerial = pinnedSerial,
-        forceController = protectController,
-    )
+    fun selectorConfig() = DroneSelector.SelectorConfig(pinnedSerial = pinnedSerial)
 
     fun engineConfig(): SentryConfig {
         val c = SentryConfig(
             advisoryNm = advisoryNm, cautionNm = cautionNm, warningNm = warningNm,
-            verticalBandFt = verticalBandFt, baroCorrectionFt = baroCorrectionFt,
+            ceilingAboveFt = ceilingAboveFt, baroCorrectionFt = baroCorrectionFt,
             cpaHorizonSec = cpaHorizonSec, tfrRelevanceNm = tfrRelevanceNm,
         )
         return if (c.ringsValid()) c else SentryConfig()

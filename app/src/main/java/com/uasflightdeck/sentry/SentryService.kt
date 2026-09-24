@@ -22,6 +22,7 @@ import com.uasflightdeck.sentry.core.ControllerFix
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SelectionMode
 import com.uasflightdeck.sentry.core.EventKind
+import com.uasflightdeck.sentry.core.FleetStatus
 import com.uasflightdeck.sentry.core.DemoReplayFixture
 import com.uasflightdeck.sentry.core.Geo
 import com.uasflightdeck.sentry.core.HealthMonitor
@@ -32,6 +33,7 @@ import com.uasflightdeck.sentry.core.Parsers
 import com.uasflightdeck.sentry.core.ReplayScenario
 import com.uasflightdeck.sentry.core.Severity
 import com.uasflightdeck.sentry.core.Target
+import com.uasflightdeck.sentry.core.TargetDisplay
 import com.uasflightdeck.sentry.core.TrafficMerger
 import com.uasflightdeck.sentry.core.Zone
 import kotlinx.coroutines.CoroutineScope
@@ -233,6 +235,13 @@ class SentryService : Service() {
                     if (failures == 1 || failures % 10 == 0) SentryBus.log("${p.name}: ${e.message ?: e.javaClass.simpleName} (x$failures)")
                     // exponential backoff, capped
                     minOf(p.maxBackoffMs, p.intervalMs * (1L shl minOf(failures, 5)))
+                } catch (e: StackOverflowError) {
+                    // Belt and braces behind Parsers.MAX_DEPTH: a pathological payload must not take the process down.
+                    failures++
+                    health.fail(p.name, "payload too deeply nested")
+                    if (failures == 1 || failures % 10 == 0) SentryBus.log("${p.name}: ${e.message ?: e.javaClass.simpleName} (x$failures)")
+                    // exponential backoff, capped
+                    minOf(p.maxBackoffMs, p.intervalMs * (1L shl minOf(failures, 5)))
                 }
                 delay(wait)
             }
@@ -284,23 +293,28 @@ class SentryService : Service() {
 
     private suspend fun pollFleet() {
         val token = settings.fleetToken
-        if (token.isBlank()) throw IllegalStateException("no fleet token (Settings)")
+        if (token.isBlank()) {
+            DroneHistory.feedStatus = FleetStatus.NO_TOKEN
+            throw IllegalStateException(FleetStatus.NO_TOKEN)
+        }
         val hdr = mapOf("X-Fleet-Token" to token)
-        var ok = 0; var err: String? = null
+        var fda = FleetStatus.Fetch(); var ds = FleetStatus.Fetch()
         try {
             val now = System.currentTimeMillis()
             val p = Parsers.parseOurDrones(http.get(base() + "/api/live/our-drones", hdr), now)
-            fdaDrones = p.drones; airsense = p.airsense; ok++
+            fdaDrones = p.drones; airsense = p.airsense; fda = FleetStatus.Fetch(count = p.drones.size)
             DroneHistory.observeLive(this, p.drones + dsDrones, now)
-        } catch (e: Exception) { err = "our-drones: ${e.message}" }
+        } catch (e: Exception) { fda = FleetStatus.Fetch(error = e.message ?: e.javaClass.simpleName) }
         try {
             val now = System.currentTimeMillis()
-            dsDrones = Parsers.parseDroneSense(http.get(base() + "/api/live/dronesense", hdr), now); ok++
+            dsDrones = Parsers.parseDroneSense(http.get(base() + "/api/live/dronesense", hdr), now); ds = FleetStatus.Fetch(count = dsDrones.size)
             DroneHistory.observeLive(this, fdaDrones + dsDrones, now)
-        } catch (e: Exception) { err = (err?.let { "$it; " } ?: "") + "dronesense: ${e.message}" }
-        if (ok == 0) throw java.io.IOException(err)
-        val n = fdaDrones.size + dsDrones.size
-        health.ok("fleet", System.currentTimeMillis(), (if (n == 0) "0 airborne" else "$n drone${if (n > 1) "s" else ""}") + (err?.let { " (1 of 2 failed)" } ?: ""))
+        } catch (e: Exception) { ds = FleetStatus.Fetch(error = e.message ?: e.javaClass.simpleName) }
+        // The row says WHY there are no drones: no token / token rejected / HTTP or network error / none in feed.
+        val st = FleetStatus.of(false, fda, ds)
+        DroneHistory.feedStatus = st.detail
+        if (!st.ok) throw java.io.IOException(st.detail)
+        health.ok("fleet", System.currentTimeMillis(), st.detail)
     }
 
     private suspend fun pollStation() {
@@ -520,6 +534,9 @@ class SentryService : Service() {
         val rows = health.all().map { SourceRow(it.spoken.replace("T F R", "TFR"), health.stateOf(it, wall), health.ageSec(it.key, wall),
             if (health.stateOf(it, wall) == HealthMonitor.State.OK) it.detail else (it.lastError ?: it.detail)) }
         val cfg = settings.engineConfig()
+        val dcfg = settings.targetDisplay()
+        val aroundAircraft = sel.mode == SelectionMode.PINNED
+        val shown = TargetDisplay.filter(res.targets, aroundAircraft, dcfg)
         val st = UiState(
             mode = mode,
             tickMs = wall,
@@ -528,7 +545,11 @@ class SentryService : Service() {
             ownshipAgeSec = res.ownshipAgeSec,
             ownshipNote = sel.note,
             sources = rows,
-            targets = res.targets,
+            targets = shown,
+            hiddenTargets = res.targets.size - shown.size,
+            displayRadiusNm = TargetDisplay.radiusNm(aroundAircraft, dcfg),
+            displayAroundAircraft = aroundAircraft,
+            displayCeilingFt = dcfg.ceilingFt,
             targetsInRadius = nTraffic,
             watchedZones = res.watchedZones,
             trafficStale = res.trafficStale,
@@ -540,8 +561,8 @@ class SentryService : Service() {
             ringsNm = Triple(cfg.advisoryNm, cfg.cautionNm, cfg.warningNm),
             selectionMode = sel.mode,
             selectionNote = sel.note,
-            pattern = settings.callsignPattern,
-            matchCount = sel.matchCount,
+            boundSerial = sel.boundSerial,
+            waitingForBound = sel.waitingForBound,
             controllerFix = sel.controllerFix,
             controllerFixAgeSec = sel.controllerFixAgeSec,
             controllerUsable = sel.controllerUsable,
@@ -559,8 +580,9 @@ class SentryService : Service() {
         st ?: return "Starting…"
         val who = when {
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock ?: ""}"
+            st.waitingForBound -> "Waiting for this controller's aircraft ${st.boundSerial}"
             st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "No drone · controller GPS unavailable"
-            st.selectionMode == SelectionMode.CONTROLLER -> "Protecting this controller"
+            st.selectionMode == SelectionMode.CONTROLLER -> "No aircraft pinned · protecting this controller"
             st.ownship == null -> "No drone position"
             !st.ownshipFresh -> "Drone position LOST (${st.ownship.name})"
             else -> "Watching ${st.ownship.name}"

@@ -4,11 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings as SysSettings
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -43,6 +40,7 @@ import java.util.Locale
  */
 class MainActivity : AppCompatActivity() {
     private companion object {
+        const val REQ_ARM = 1
         val SRC_ABBR = mapOf("station" to "stn", "cloud" to "cld", "airsense" to "air", "replay" to "rpl")
     }
     private lateinit var settings: Settings
@@ -77,10 +75,11 @@ class MainActivity : AppCompatActivity() {
         btnArm.setOnClickListener {
             val st = SentryBus.state.value
             if (settings.armed && st.mode != Mode.OFF) SentryService.send(this, SentryService.ACTION_DISARM)
-            else { askPermissionsOnce(); SentryService.send(this, SentryService.ACTION_ARM); maybeAskBatteryExemption() }
+            // Any permission prompt happens HERE, before arming, on the pilot's own tap in Sentry; never while
+            // armed. The battery-optimisation prompt is only in Settings (never on ARM).
+            else if (!askPermissionsBeforeArming()) SentryService.send(this, SentryService.ACTION_ARM)
         }
         findViewById<View>(R.id.btnTest).setOnClickListener { SentryService.send(this, SentryService.ACTION_TEST) }
-        findViewById<View>(R.id.btnPick).setOnClickListener { DronePicker.show(this, settings) }
         findViewById<View>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
         lifecycleScope.launch {
@@ -116,11 +115,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** "Pinned: <serial> · <last known callsign>" for the drone panel, or null when nothing is pinned. */
-    private fun pinnedLine(): String? {
-        val pin = settings.pinnedSerial.trim().ifEmpty { return null }
-        val cs = DroneHistory.entries(this).firstOrNull { it.serial?.trim()?.equals(pin, ignoreCase = true) == true }?.callsign
-        return "Pinned: $pin · ${cs ?: "not seen yet"}"
+    /**
+     * What this controller is bound to, shown on EVERY render (armed or not) so a pilot can never be misled
+     * about which aircraft is protected: "Bound to: <serial> · <callsign>", or "NO AIRCRAFT PINNED …".
+     */
+    private fun boundLine(watched: com.uasflightdeck.sentry.core.Ownship?): CharSequence {
+        val pin = settings.pinnedSerial.trim()
+        if (pin.isEmpty()) return SpannableStringBuilder().add("NO AIRCRAFT PINNED — protecting this controller only (Settings)", col(R.color.caution), true)
+        val cs = watched?.takeIf { it.serial?.trim().equals(pin, ignoreCase = true) }?.let { it.callsign ?: it.name }
+            ?: DroneHistory.entries(this).firstOrNull { it.serial?.trim()?.equals(pin, ignoreCase = true) == true }?.callsign
+        return SpannableStringBuilder().add("Bound to: ", col(R.color.dim)).add(pin, col(R.color.ink), true)
+            .add(" · ${cs ?: "not seen yet"}", col(R.color.ink))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -141,16 +146,13 @@ class MainActivity : AppCompatActivity() {
                 it.putExtra(SentryService.EXTRA_CLOUD_VIEW, i.getBooleanExtra("cloud_view", false))
             }
             "test" -> SentryService.send(this, SentryService.ACTION_TEST)
-            // --es station_url http://10.0.2.2:18080 --ez station true --es pattern "DEMO-# Pilot"
-            // --es serials "A,B" --es pinned 1581F7K3C251F00C9B34 --ez protect_controller true --es worker http://10.0.2.2:18081
+            // --es station_url http://10.0.2.2:18080 --ez station true
+            // --es pinned 1581F7K3C251F00C9B34 --es worker http://10.0.2.2:18081
             // --ef elev 5100 (controller elevation override; NaN clears it)
             "set" -> {
                 i.getStringExtra("station_url")?.let { settings.stationUrl = it }
                 if (i.hasExtra("station")) settings.stationEnabled = i.getBooleanExtra("station", false)
-                i.getStringExtra("pattern")?.let { settings.callsignPattern = it }
                 i.getStringExtra("pinned")?.let { settings.pinnedSerial = it }
-                i.getStringExtra("serials")?.let { settings.serials = it }
-                if (i.hasExtra("protect_controller")) settings.protectController = i.getBooleanExtra("protect_controller", false)
                 i.getStringExtra("worker")?.let { settings.workerBase = it }
                 if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
             }
@@ -161,9 +163,9 @@ class MainActivity : AppCompatActivity() {
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     /**
-     * Reflow for the width we actually have. The RC Plus (1920x1200 at ~320 dpi) gives ~960 dp:
-     * smaller compass with the drone panel under it, ARM on its own row, smaller type. Only
-     * rearranges and resizes: every panel of the wide layout is still on screen.
+     * Reflow for the width we actually have. The RC Plus (1920x1200 at density 2.5) gives ~768 x 480 dp:
+     * smaller compass with the drone panel under it, smaller type. Only rearranges and resizes; the
+     * action bar is pinned in the layout and each column scrolls, so nothing is ever out of reach.
      */
     private fun applyPlan(p: ScreenLayout.MainPlan) {
         plan = p
@@ -177,42 +179,15 @@ class MainActivity : AppCompatActivity() {
         zones.textSize = p.bodySp; logView.textSize = p.logSp; logView.maxLines = p.logLines
         for (id in intArrayOf(R.id.droneLabel, R.id.sourcesLabel, R.id.targetsLabel, R.id.calloutsLabel)) findViewById<TextView>(id).textSize = p.labelSp
 
-        val buttonIds = intArrayOf(R.id.btnArm, R.id.btnTest, R.id.btnPick, R.id.btnSettings)
-        for (id in buttonIds) findViewById<View>(id).layoutParams.height = dp(p.buttonHeightDp)
-
-        fitLines(callouts, findViewById(R.id.calloutsLabel)); fitLines(targets, targetsLabel)
+        for (id in intArrayOf(R.id.btnArm, R.id.btnTest, R.id.btnSettings))
+            findViewById<View>(id).layoutParams.height = dp(p.buttonHeightDp)
 
         if (p.droneUnderCompass) {
             // Drone panel: from the left column to under the compass (and the zones line).
             val panel = findViewById<View>(R.id.dronePanel)
             (panel.parent as ViewGroup).removeView(panel)
-            findViewById<LinearLayout>(R.id.colCentre).addView(panel, LinearLayout.LayoutParams(
+            findViewById<LinearLayout>(R.id.colCentreInner).addView(panel, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
-            (findViewById<View>(R.id.sourcesPanel).layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
-        }
-        if (p.buttonsTwoRows) {
-            // ARM gets the full width of its own row; Test / Drone… / Settings share the row below.
-            val row = findViewById<LinearLayout>(R.id.buttonRow)
-            row.removeView(btnArm)
-            findViewById<LinearLayout>(R.id.buttonBox).addView(btnArm, 0,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(p.buttonHeightDp)).apply { bottomMargin = dp(6) })
-            (findViewById<View>(R.id.btnTest).layoutParams as LinearLayout.LayoutParams).marginStart = 0
-            for (id in intArrayOf(R.id.btnTest, R.id.btnPick, R.id.btnSettings))
-                (findViewById<View>(id).layoutParams as LinearLayout.LayoutParams).weight = 1f
-        }
-    }
-
-    /**
-     * A panel shows as many whole lines as fit and ends in "…", instead of the panel edge cutting a
-     * line in half (seen at 320 dpi with five long callouts). Newest items come first, so only the
-     * oldest are cut, and every callout is also in the log and the notification shade.
-     */
-    private fun fitLines(tv: TextView, label: View) {
-        tv.ellipsize = android.text.TextUtils.TruncateAt.END
-        (tv.parent as View).addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            val avail = v.height - v.paddingTop - v.paddingBottom - label.height
-            val n = (avail / tv.lineHeight.coerceAtLeast(1)).coerceAtLeast(1)
-            if (tv.maxLines != n) tv.post { tv.maxLines = n }
         }
     }
 
@@ -267,14 +242,17 @@ class MainActivity : AppCompatActivity() {
             st.mode == Mode.REPLAY && top != null && top.severity >= Severity.ADVISORY ->
                 "REPLAY ${st.replayClock} · ${top.severity.label.uppercase()} ${top.displayId}" to sevColRes(top.severity)
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock}" to R.color.replay
-            st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "NO DRONE · CONTROLLER GPS UNAVAILABLE" to R.color.warning
+            // Bound, aircraft not in the feed: say so, unless a cylinder alert around the controller is up.
+            st.waitingForBound && (top == null || top.severity < Severity.ADVISORY) ->
+                "WAITING FOR THIS CONTROLLER'S AIRCRAFT · ${st.boundSerial}" to R.color.caution
+            st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "NO AIRCRAFT PINNED · CONTROLLER GPS UNAVAILABLE" to R.color.warning
             st.ownship == null -> "NO DRONE POSITION" to R.color.warning
             !st.ownshipFresh -> "DRONE POSITION LOST · ${age(st.ownshipAgeSec)} old" to R.color.warning
             top != null && top.severity >= Severity.ADVISORY ->
                 "${top.severity.label.uppercase()} · ${top.displayId} ${Geo.cardinalAbbrev(top.bearingDeg)} ${Phrasing.displayDistance(top.distNm)}" to sevColRes(top.severity)
             st.trafficStale -> "TRAFFIC DATA STALE" to R.color.caution
-            st.selectionMode == SelectionMode.CONTROLLER && st.cylinders.isEmpty() -> "NO DRONE · NO CYLINDER ENABLED" to R.color.caution
-            st.selectionMode == SelectionMode.CONTROLLER -> "ARMED · PROTECTING CONTROLLER" to R.color.ok
+            st.selectionMode == SelectionMode.CONTROLLER && st.cylinders.isEmpty() -> "NO AIRCRAFT PINNED · NO CYLINDER ENABLED" to R.color.caution
+            st.selectionMode == SelectionMode.CONTROLLER -> "ARMED · PROTECTING THIS CONTROLLER" to R.color.ok
             else -> "ARMED · WATCHING ${st.ownship.name}" to R.color.ok
         }
         banner.text = text
@@ -292,13 +270,13 @@ class MainActivity : AppCompatActivity() {
         // ── drone ──
         val o = st.ownship
         val controllerMode = st.selectionMode == SelectionMode.CONTROLLER
-        droneLabel.text = when (st.selectionMode) {
-            SelectionMode.PINNED -> "Protecting · this controller's aircraft (pinned serial)"
-            SelectionMode.CALLSIGN -> "Protecting · drone by callsign"
-            SelectionMode.SERIAL -> "Protecting · drone by serial"
-            SelectionMode.CONTROLLER -> "Protecting · this controller (no drone selected)"
-            null -> "Protecting"
+        droneLabel.text = when {
+            st.mode == Mode.OFF || st.selectionMode == null -> "Protecting"
+            st.selectionMode == SelectionMode.PINNED -> "Protecting · this controller's aircraft"
+            st.waitingForBound -> "Protecting · this controller (waiting for its aircraft)"
+            else -> "Protecting · this controller (no aircraft pinned)"
         }
+        val bound = boundLine(o)
         if (controllerMode && st.mode != Mode.OFF) {
             val sb = SpannableStringBuilder().add("This controller", bold = true)
             sb.add("  ${if (st.controllerUsable) "GPS OK" else "NO GPS FIX"}", col(if (st.controllerUsable) R.color.ok else R.color.warning), true)
@@ -306,27 +284,20 @@ class MainActivity : AppCompatActivity() {
             val f = st.controllerFix
             val pos = if (f == null) "no fix yet" else "%.5f, %.5f · %s".format(Locale.US, f.lat, f.lon,
                 f.elevMslFt?.let { "%,d ft".format(Locale.US, it.toInt()) } ?: "elev unknown")
-            val why = if (settings.protectController) "chosen in Drone…" else st.ownshipNote.ifEmpty {
-                if (st.pattern.isBlank()) "no callsign pattern set" else "\"${st.pattern}\" matches nothing airborne" }
             val cyl = if (st.cylinders.isEmpty()) "No cylinder enabled: nothing protected (Settings)" else st.cylinders.joinToString("\n") { "◯ " + it.describe() }
-            droneDetail.text = listOfNotNull(pinnedLine(), why, pos, cyl).joinToString("\n")
+            droneDetail.text = SpannableStringBuilder(bound).append("\n" + listOf(st.ownshipNote, pos, cyl).filter { it.isNotEmpty() }.joinToString("\n"))
         } else if (o == null) {
             drone.text = if (st.mode == Mode.OFF) "—" else "No drone"
-            droneDetail.text = listOfNotNull(pinnedLine(), st.ownshipNote.ifEmpty { if (st.mode == Mode.OFF) "Arm to start watching" else "" }.ifEmpty { null }).joinToString("\n")
+            droneDetail.text = SpannableStringBuilder(bound).append("\n" + st.ownshipNote.ifEmpty { if (st.mode == Mode.OFF) "Arm to start watching" else "" })
         } else {
             val sb = SpannableStringBuilder().add(o.name, bold = true)
             sb.add("  ${age(st.ownshipAgeSec)}", if (st.ownshipFresh) col(R.color.ok) else col(R.color.warning))
             if (!st.ownshipFresh) sb.add("  LOST", col(R.color.warning), true)
             drone.text = sb
             val alt = listOfNotNull(o.altMslFt?.let { "%,d ft MSL".format(Locale.US, it.toInt()) }, o.altAglFt?.let { "%,d AGL".format(Locale.US, it.toInt()) }).joinToString(" · ")
-            val how = when (st.selectionMode) {
-                SelectionMode.PINNED -> "s/n ${o.serial ?: "?"} · "
-                SelectionMode.SERIAL -> "serial ${o.serial ?: "?"} · "
-                SelectionMode.CALLSIGN -> "pattern \"${st.pattern}\" · "
-                else -> ""
-            }
-            droneDetail.text = (pinnedLine()?.let { "$it\n" } ?: "") + "$how${o.source.label} · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
-                (if (st.ownshipNote.isNotEmpty()) "\n${st.ownshipNote}" else "")
+            droneDetail.text = SpannableStringBuilder(bound).append("\n" + listOfNotNull(o.model, o.source.label).joinToString(" · ") +
+                " · %.5f, %.5f · %s".format(Locale.US, o.lat, o.lon, alt.ifEmpty { "alt unknown" }) +
+                (if (st.ownshipNote.isNotEmpty()) "\n${st.ownshipNote}" else ""))
         }
 
         // ── sources ──
@@ -341,18 +312,17 @@ class MainActivity : AppCompatActivity() {
                 HealthMonitor.State.DISABLED -> "OFF    " to R.color.dim
             }
             sb.add(r.name.padEnd(14).take(14), col(R.color.ink)).add(label, col(c), true)
-                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).tail(27, r.detail.take(20), col(R.color.dim), sc)
+                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).tail(27, r.detail.take(60), col(R.color.dim), sc)
         }
         if (st.mode != Mode.OFF && st.selectionMode != null) {
-            val (lbl, c) = when (st.selectionMode) {
-                SelectionMode.PINNED -> "PINNED   " to R.color.ok
-                SelectionMode.CALLSIGN -> "CALLSIGN " to R.color.ok
-                SelectionMode.SERIAL -> "SERIAL   " to R.color.ok
-                SelectionMode.CONTROLLER -> "CONTROL  " to R.color.caution
+            val (lbl, c) = when {
+                st.selectionMode == SelectionMode.PINNED -> "BOUND    " to R.color.ok
+                st.waitingForBound -> "WAITING  " to R.color.caution
+                else -> "CONTROL  " to R.color.caution
             }
             val det = when (st.selectionMode) {
-                SelectionMode.CONTROLLER -> "${st.cylinders.size} cylinder${if (st.cylinders.size == 1) "" else "s"}"
-                else -> "${st.matchCount} match${if (st.matchCount == 1) "" else "es"}"
+                SelectionMode.PINNED -> st.boundSerial ?: ""
+                else -> "${st.cylinders.size} cylinder${if (st.cylinders.size == 1) "" else "s"}"
             }
             sb.add("Selection".padEnd(14), col(R.color.ink)).add(lbl, col(c), true).tail(23, det, col(R.color.dim), sc)
             // Controller GPS health, derived at render time from the fix itself
@@ -378,7 +348,9 @@ class MainActivity : AppCompatActivity() {
         sources.text = sb
 
         // ── targets ──
-        targetsLabel.text = if (st.mode == Mode.OFF) "Targets" else "Targets · ${st.targets.size} within ${settings.trafficRadiusNm.toInt()} nm"
+        targetsLabel.text = if (st.mode == Mode.OFF) "Targets" else
+            "Targets · ${st.targets.size} within ${trimNm(st.displayRadiusNm)} nm of ${if (st.displayAroundAircraft) "aircraft" else "controller"}" +
+                " · ≤${"%,d".format(Locale.US, st.displayCeilingFt.toInt())} ft" + (if (st.hiddenTargets > 0) " · ${st.hiddenTargets} hidden" else "")
         val tb = SpannableStringBuilder()
         val tc = monoChars(targets)
         if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) (if (controllerMode) "No controller GPS: nothing computed" else "No ownship: proximity not computed") else "No traffic", col(R.color.dim))
@@ -410,6 +382,8 @@ class MainActivity : AppCompatActivity() {
             else "Watching: " + st.watchedZones.joinToString(" · ")
     }
 
+    private fun trimNm(v: Double) = if (v % 1.0 == 0.0) v.toInt().toString() else String.format(Locale.US, "%.1f", v)
+
     private fun sevColRes(s: Severity) = when (s) {
         Severity.WARNING -> R.color.warning; Severity.CAUTION -> R.color.caution
         Severity.ADVISORY -> R.color.advisory; else -> R.color.ok }
@@ -424,24 +398,25 @@ class MainActivity : AppCompatActivity() {
         callouts.text = sb
     }
 
-    /** Notifications, and location: the controller's GPS is the fallback protected position. */
-    private fun askPermissionsOnce() {
+    /**
+     * Notifications, and location (the controller's GPS is the fallback protected position). Returns true when a
+     * prompt was shown: arming then happens in [onRequestPermissionsResult], after the system dialog is gone.
+     */
+    private fun askPermissionsBeforeArming(): Boolean {
         val want = ArrayList<String>()
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             want += Manifest.permission.POST_NOTIFICATIONS
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             want += Manifest.permission.ACCESS_FINE_LOCATION; want += Manifest.permission.ACCESS_COARSE_LOCATION
         }
-        if (want.isNotEmpty()) requestPermissions(want.toTypedArray(), 1)
+        if (want.isEmpty()) return false
+        requestPermissions(want.toTypedArray(), REQ_ARM)
+        return true
     }
 
-    @SuppressLint("BatteryLife")
-    private fun maybeAskBatteryExemption() {
-        val pm = getSystemService(PowerManager::class.java)
-        if (pm.isIgnoringBatteryOptimizations(packageName) || settings.batteryPrompted) return
-        settings.batteryPrompted = true
-        runCatching {
-            startActivity(Intent(SysSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-        }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Arm whatever the answer: without location Sentry still watches the pinned aircraft (and says the controller GPS is unavailable).
+        if (requestCode == REQ_ARM) SentryService.send(this, SentryService.ACTION_ARM)
     }
 }

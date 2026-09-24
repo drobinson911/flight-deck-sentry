@@ -16,7 +16,27 @@ import kotlinx.serialization.json.JsonPrimitive
 object Parsers {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-    fun parse(text: String): JsonElement = json.parseToJsonElement(text)
+    /** Real payloads nest < 10 deep; anything past this is refused before the (recursive) JSON parser sees it. */
+    const val MAX_DEPTH = 64
+
+    /**
+     * Every feed goes through here. A payload nested deeper than [MAX_DEPTH] throws IllegalArgumentException
+     * (an ordinary Exception the per-poll catch handles) instead of reaching the recursive parser, which
+     * threw StackOverflowError on `[[[[…` (found by MalformedPayloadTest): an Error the poll catch would not
+     * stop, i.e. a bad payload could have crashed the process.
+     */
+    fun parse(text: String): JsonElement {
+        var depth = 0; var inStr = false; var esc = false
+        for (c in text) {
+            if (inStr) { if (esc) esc = false else if (c == '\\') esc = true else if (c == '"') inStr = false; continue }
+            when (c) {
+                '"' -> inStr = true
+                '[', '{' -> if (++depth > MAX_DEPTH) throw IllegalArgumentException("JSON nested deeper than $MAX_DEPTH")
+                ']', '}' -> depth--
+            }
+        }
+        return json.parseToJsonElement(text)
+    }
 
     // ── tiny tree helpers ────────────────────────────────────────────────
     internal fun JsonElement?.obj(): JsonObject? = this as? JsonObject
@@ -106,6 +126,7 @@ object Parsers {
                 source = OwnshipSource.FLEET_FDA,
                 callsign = cs,
                 serial = info.str("serial")?.trim()?.takeIf { it.isNotBlank() },
+                model = info.str("model")?.trim()?.takeIf { it.isNotBlank() },
             )
             // The drone's own AirSense receiver is a THIRD traffic source.
             for (cEl in d["airsense"].arr().orEmpty()) {
@@ -154,6 +175,7 @@ object Parsers {
                 name = cs ?: d.str("droneName")?.takeIf { it.isNotBlank() } ?: d.str("name") ?: id,
                 callsign = cs,
                 serial = (d.str("serial") ?: d.str("serialNumber"))?.trim()?.takeIf { it.isNotBlank() },
+                model = d.str("model")?.trim()?.takeIf { it.isNotBlank() },
                 speedMs = d.num("speed"),
                 lat = lat, lon = lon,
                 altMslFt = d.num("altitudeMsl")?.let { Units.mToFt(it) },

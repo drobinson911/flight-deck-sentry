@@ -10,9 +10,9 @@ import java.util.Date
 import java.util.TimeZone
 
 /**
- * The demo data through the FULL live path: DroneSelector (callsign
- * pattern / serial / controller fallback) feeding AlertEngine, 1 s ticks,
- * exactly as SentryService does it.
+ * The demo data through the FULL live path: DroneSelector (pinned
+ * serial, else the controller) feeding AlertEngine, 1 s ticks, exactly as
+ * SentryService does it.
  */
 class DemoSelectionReplayTest {
     private val assets = File(System.getProperty("sentry.assets") ?: "../app/src/main/assets")
@@ -24,8 +24,8 @@ class DemoSelectionReplayTest {
 
     private data class Run(val events: List<AlertEvent>, val modes: List<Pair<Long, SelectionMode>>)
 
-    private fun run(pattern: String, cylinders: List<Cylinder>, force: Boolean = false, pinned: String = ""): Run {
-        val selector = DroneSelector(DroneSelector.SelectorConfig(pattern = pattern, forceController = force, pinnedSerial = pinned))
+    private fun run(pinned: String, cylinders: List<Cylinder>): Run {
+        val selector = DroneSelector(DroneSelector.SelectorConfig(pinnedSerial = pinned))
         val engine = AlertEngine(externalSelection = true)
         val out = ArrayList<AlertEvent>(); val modes = ArrayList<Pair<Long, SelectionMode>>()
         var t = sc.startMs
@@ -46,30 +46,11 @@ class DemoSelectionReplayTest {
         ev.forEach { println("${hms(it.timeMs)}  ${it.severity.label.padEnd(8)} ${it.kind.name.padEnd(16)} ${it.text}   [tts: ${it.speech}]") }
     }
 
-    @Test fun patternSelectsDEMO-1AndStillWarnsAt115257() {
-        assertEquals("DEMO-1 Pilot", DemoReplayFixture.DRONE_CALLSIGN)
-        val r = run("DEMO-# Pilot", Cylinder.DEFAULTS)
-        dump("pattern 'DEMO-# Pilot'", r.events)
-        assertTrue("never left callsign mode", r.modes.all { it.second == SelectionMode.CALLSIGN })
-        val first = r.events.first()
-        assertEquals(EventKind.SELECTION, first.kind)
-        assertEquals("Watching DEMO-1 Pilot.", first.text)
-        assertEquals(sc.startMs, first.timeMs)
-
-        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
-        assertEquals("11:52:57", hms(warn.timeMs))
-        assertEquals(EventKind.PREDICTIVE, warn.kind)
-        assertTrue(warn.timeMs < DemoReplayFixture.CLOSEST_MS)
-        val tfr = r.events.single { it.kind == EventKind.TFR_ENTRY }
-        assertTrue(kotlin.math.abs(tfr.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
-        assertTrue("no cylinder callouts while a drone is watched", r.events.none { it.kind == EventKind.CYLINDER_ENTRY })
-        assertTrue(r.events.none { it.kind == EventKind.OWNSHIP_LOST })
-    }
-
-    /** v0.3: the replay drone pinned by its (synthetic) serial, with a pattern that matches nothing. */
+    /** The replay drone pinned by its (synthetic) serial: the full selection path gives the README callouts. */
     @Test fun pinnedSerialWatchesDemo1AndStillWarnsAt115257() {
         assertEquals("1581F7K3C251F00C9B34", DemoReplayFixture.DRONE_SERIAL)
-        val r = run("DEMO## Smith", Cylinder.DEFAULTS, pinned = DemoReplayFixture.DRONE_SERIAL.lowercase())
+        assertEquals("DEMO-1 Pilot", DemoReplayFixture.DRONE_CALLSIGN)
+        val r = run(DemoReplayFixture.DRONE_SERIAL.lowercase(), Cylinder.DEFAULTS)
         dump("pinned serial ${DemoReplayFixture.DRONE_SERIAL}", r.events)
         assertTrue("never left pinned mode", r.modes.all { it.second == SelectionMode.PINNED })
         val first = r.events.first()
@@ -79,19 +60,30 @@ class DemoSelectionReplayTest {
         val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
         assertEquals("11:52:57", hms(warn.timeMs))
         assertEquals(EventKind.PREDICTIVE, warn.kind)
-        // the engine output is identical to the pattern run: pinning changes WHO is protected, not the callouts
-        val byPattern = run("DEMO-# Pilot", Cylinder.DEFAULTS).events.filter { it.kind != EventKind.SELECTION }
-        assertEquals(byPattern.map { it.timeMs to it.text }, r.events.filter { it.kind != EventKind.SELECTION }.map { it.timeMs to it.text })
-    }
-
-    @Test fun nonMatchingPatternFallsBackToController() {
-        val r = run("DEMO## Smith", Cylinder.DEFAULTS)
-        assertTrue(r.modes.all { it.second == SelectionMode.CONTROLLER })
-        assertEquals("No drone selected. Protecting this controller.", r.events.first { it.kind == EventKind.SELECTION }.text)
+        assertTrue(warn.timeMs < DemoReplayFixture.CLOSEST_MS)
+        val tfr = r.events.single { it.kind == EventKind.TFR_ENTRY }
+        assertTrue(kotlin.math.abs(tfr.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
+        assertTrue("no cylinder callouts while the drone is watched", r.events.none { it.kind == EventKind.CYLINDER_ENTRY })
+        assertTrue(r.events.none { it.kind == EventKind.OWNSHIP_LOST })
     }
 
     /**
-     * No pattern: Sentry protects the controller at DEMO-1's launch point
+     * Bound to an airframe that is NOT in the replay, while DEMO-1 IS airborne in the feed: DEMO-1 must never be
+     * watched; the controller cylinders protect the pilot, with exactly the callouts of the nothing-pinned run.
+     */
+    @Test fun boundAbsentAirframeProtectsControllerNeverDemo1() {
+        val cyl = listOf(Cylinder("ops", "ops area", 1.0, 0.0, 3000.0))
+        val r = run("1581F7K3C999XXXX0000", cyl)
+        dump("bound to an absent airframe, DEMO-1 airborne", r.events)
+        assertTrue("DEMO-1 was never watched", r.modes.all { it.second == SelectionMode.CONTROLLER })
+        assertEquals(listOf("Waiting for this controller's aircraft."), r.events.filter { it.kind == EventKind.SELECTION }.map { it.text })
+        val nothingPinned = run("", cyl).events.filter { it.kind != EventKind.SELECTION }
+        assertEquals(nothingPinned.map { it.timeMs to it.text }, r.events.filter { it.kind != EventKind.SELECTION }.map { it.timeMs to it.text })
+        assertTrue(r.events.any { it.kind == EventKind.CYLINDER_ENTRY && it.hex == DemoReplayFixture.HEX })
+    }
+
+    /**
+     * Nothing pinned: Sentry protects the controller at DEMO-1's launch point
      * (39.4290, -120.0344, 5,100 ft). N388KM was ~7,500 ft pressure altitude
      * (≈7,800 MSL with the +300 ft estimate), i.e. ~2,700 ft above the
      * controller, so the 1 nm cylinder here is SFC–3,000 ft above controller.
@@ -99,13 +91,13 @@ class DemoSelectionReplayTest {
      * 11:53:39 and 0.81 nm at 11:53:44, so it physically crosses 1 nm at about
      * 11:53:39.7; its closest approach to the controller is 0.23 nm at 11:54:03.
      */
-    @Test fun noPatternOneMileCylinderAroundController() {
+    @Test fun nothingPinnedOneMileCylinderAroundController() {
         val cyl = listOf(Cylinder("ops", "ops area", 1.0, 0.0, 3000.0))
         val r = run("", cyl)
-        dump("no pattern, 1 nm SFC-3,000 ft cylinder at the DEMO-1 launch point", r.events)
+        dump("nothing pinned, 1 nm SFC-3,000 ft cylinder at the DEMO-1 launch point", r.events)
         assertTrue(r.modes.all { it.second == SelectionMode.CONTROLLER })
         val sel = r.events.first { it.kind == EventKind.SELECTION }
-        assertEquals("No drone selected. Protecting this controller.", sel.text)
+        assertEquals("No aircraft pinned. Protecting this controller.", sel.text)
 
         val entry = r.events.firstOrNull { it.kind == EventKind.CYLINDER_ENTRY && it.hex == DemoReplayFixture.HEX }
         assertNotNull("no cylinder-entry callout", entry)

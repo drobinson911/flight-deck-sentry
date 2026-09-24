@@ -9,59 +9,6 @@ import com.uasflightdeck.sentry.core.Parsers.obj
 import com.uasflightdeck.sentry.core.Parsers.str
 import kotlin.math.roundToLong
 
-/**
- * "My callsign pattern". Syntax:
- *  - literal text, case-insensitive; spaces and hyphens are optional
- *    separators (both sides are normalised by removing them), so
- *    `DEMO-# Pilot` matches "DEMO-1 Pilot", "DEMO-1 Pilot", "demo1pilot".
- *  - `#` = exactly one digit, `*` = any run of characters (including none).
- *  - `re:<regex>` = a plain regular expression, case-insensitive, matched
- *    anywhere in the raw callsign (anchor it with ^ and $ for a full match).
- * The whole callsign must match a non-regex pattern.
- */
-class CallsignPattern private constructor(val source: String, private val regex: Regex?, private val isRe: Boolean) {
-
-    /** True when the pattern could not be compiled (bad `re:`). A blank pattern is valid and matches nothing. */
-    val invalid: Boolean get() = regex == null && source.isNotBlank()
-    val isBlank: Boolean get() = source.isBlank()
-
-    fun matches(callsign: String?): Boolean {
-        val r = regex ?: return false
-        callsign ?: return false
-        return if (isRe) r.containsMatchIn(callsign) else r.matches(normalise(callsign))
-    }
-
-    companion object {
-        /** Lower-case, and remove whitespace and hyphens. */
-        fun normalise(s: String): String = s.lowercase().filterNot { it.isWhitespace() || it == '-' }
-
-        fun compile(pattern: String): CallsignPattern {
-            val p = pattern.trim()
-            if (p.isEmpty()) return CallsignPattern(p, null, false)
-            if (p.startsWith("re:", ignoreCase = true)) {
-                val r = runCatching { Regex(p.substring(3).trim(), RegexOption.IGNORE_CASE) }.getOrNull()
-                return CallsignPattern(p, r, true)
-            }
-            val sb = StringBuilder()
-            for (c in normalise(p)) when (c) {
-                '#' -> sb.append("\\d")
-                '*' -> sb.append(".*")
-                else -> sb.append(Regex.escape(c.toString()))
-            }
-            return CallsignPattern(p, Regex(sb.toString()), false)
-        }
-    }
-}
-
-/** Serial allowlist: comma / newline / whitespace separated, compared case-insensitively. */
-object SerialList {
-    fun parse(raw: String): Set<String> =
-        raw.split(',', '\n', ';', ' ', '\t').map { it.trim().uppercase() }.filter { it.isNotEmpty() }.toSet()
-
-    fun contains(list: Set<String>, serial: String?): Boolean =
-        serial != null && serial.trim().uppercase() in list
-}
-
 /** This controller's own GPS fix. [elevMslFt] null = unknown (limits fail wide). */
 data class ControllerFix(
     val lat: Double,
@@ -152,36 +99,26 @@ data class Cylinder(
 }
 
 enum class SelectionMode(val label: String) {
-    /** "This controller's aircraft": the pinned airframe serial. Beats everything else. */
+    /** Watching this controller's aircraft: the airframe whose serial is pinned. */
     PINNED("pinned"),
-    CALLSIGN("callsign"),
-    SERIAL("serial"),
+    /** Protecting the controller: nothing is pinned, or the pinned airframe is not in the feed. */
     CONTROLLER("controller"),
 }
 
 /**
- * Chooses what Sentry protects, re-evaluated on EVERY tick from the live
- * drone list (never "last event wins"):
+ * What Sentry protects, re-evaluated on EVERY tick from the live drone list.
  *
- *  0. "This controller's aircraft": the drone whose serial is PINNED
- *     (airborne, else on the pad). It beats a callsign match even when the
- *     pattern matches a different drone ("Pinned aircraft wins", said once).
- *     When it is not in the feed Sentry falls back as below, but keeps looking
- *     for it every tick and switches to it the moment it appears.
- *  1. an AIRBORNE drone whose callsign matches the pattern,
- *  2. an AIRBORNE drone whose serial is on the allowlist,
- *  3. a matching drone that is fresh but still on the pad (pattern, then serial),
- *  4. otherwise the controller: cylinders centred on this controller's GPS.
+ * v0.3.3, owner: "just serial number or controller as a fallback", "needs to be a constant, per controller".
+ * There are exactly two outcomes:
+ *  - the PINNED airframe (airborne, else on the pad), matched by serial trimmed and case-insensitively;
+ *  - otherwise the CONTROLLER: cylinders centred on this controller's GPS.
+ * No other drone is ever a candidate, so the pilot can never be protecting someone else's aircraft.
  *
- * Within a tier the freshest position wins; once watching, Sentry stays on
- * that drone while it is still in the best available tier (no flapping
- * between two drones reporting a second apart).
- *
- * The watched drone going stale: after [SelectorConfig.staleSec] the engine
- * says "Drone position lost" (the stale ownship is still passed so the UI
- * shows its age); after [SelectorConfig.fallbackSec] Sentry falls back to the
- * controller cylinders and says so; when a matching drone is fresh again it
- * is re-acquired.
+ * Speech: "Watching <callsign>, this controller's aircraft." when it is acquired. When it is pinned but
+ * missing: "Waiting for this controller's aircraft.", said once on arm (after a short start-up grace, so the
+ * first fleet poll can land) and once each time it drops out. It drops out after [SelectorConfig.fallbackSec]:
+ * after [SelectorConfig.staleSec] the engine already says "Drone position lost" (the stale position is still
+ * passed so the UI shows its age). With nothing pinned: "No aircraft pinned. Protecting this controller."
  */
 class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
 
@@ -191,174 +128,88 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
     }
 
     data class SelectorConfig(
-        val pattern: String = "",
-        val serials: Set<String> = emptySet(),
-        /** This controller's aircraft (airframe serial), blank = none. Compared trimmed and case-insensitively. */
+        /** This controller's aircraft (airframe serial), blank = none pinned. */
         val pinnedSerial: String = "",
-        val forceController: Boolean = false,
         val staleSec: Double = 15.0,
         val fallbackSec: Double = 30.0,
         /** A stationary controller's fix is used for this long (its true age is shown). */
         val controllerFixMaxAgeSec: Double = 60.0,
-        /** Hold "No drone selected" speech this long after start, so arming doesn't announce controller mode 2 s before the first fleet poll lands. */
+        /** Hold the start-up line this long after arming, so it isn't said 2 s before the first fleet poll lands. */
         val startupGraceSec: Double = 5.0,
     )
 
     data class Result(
         val mode: SelectionMode,
-        /** What the engine should protect: the watched drone (possibly stale), the controller, or null. */
+        /** What the engine should protect: the pinned drone (possibly stale), the controller, or null. */
         val ownship: Ownship?,
-        /** The watched drone, if in drone mode. */
+        /** The watched (pinned) drone, if in PINNED mode. */
         val drone: Ownship?,
         val events: List<AlertEvent>,
-        /** Human note for the UI ("2 drones match; watching the freshest", "pattern invalid" …). */
+        /** Human note for the UI. */
         val note: String,
-        val matchCount: Int,
         val controllerFix: ControllerFix?,
         val controllerFixAgeSec: Double?,
         val controllerUsable: Boolean,
+        /** The pinned serial as typed (trimmed), or null when nothing is pinned. */
+        val boundSerial: String? = null,
+        /** Pinned, and the pinned airframe is not being watched right now. */
+        val waitingForBound: Boolean = false,
     )
 
     private var mode: SelectionMode? = null
-    private var watchedId: String? = null
     private var watched: Ownship? = null
     private var firstMs: Long? = null
     private var pendingControllerSpeech: String? = null
     private var controllerGpsAnnouncedLost = false
     private var controllerModeSinceMs = 0L
-    private var pinConflictAnnounced = false
 
     val currentMode: SelectionMode? get() = mode
 
     fun reset() {
-        mode = null; watchedId = null; watched = null; firstMs = null
-        pendingControllerSpeech = null; controllerGpsAnnouncedLost = false; pinConflictAnnounced = false
+        mode = null; watched = null; firstMs = null
+        pendingControllerSpeech = null; controllerGpsAnnouncedLost = false
     }
 
     fun step(nowMs: Long, drones: List<Ownship>, controller: ControllerFix?): Result {
         val cfg = config
         if (firstMs == null) firstMs = nowMs
         val events = ArrayList<AlertEvent>()
-        val pat = CallsignPattern.compile(cfg.pattern)
         fun age(o: Ownship) = (nowMs - o.posTimeMs) / 1000.0
-        fun isFresh(o: Ownship) = age(o) <= cfg.staleSec
-
-        // Freshest report per drone id (two feeds may carry the same drone).
-        val byId = drones.groupBy { it.id }.mapValues { (_, v) -> v.maxBy { it.posTimeMs } }
-        watchedId?.let { id -> byId[id]?.let { d -> if (watched == null || d.posTimeMs >= watched!!.posTimeMs) watched = d } }
 
         val pinned = normaliseSerial(cfg.pinnedSerial)
-        fun pinMatch(o: Ownship) = pinned != null && normaliseSerial(o.serial) == pinned
-        fun patMatch(o: Ownship) = pat.matches(o.callsign ?: o.name)
-        fun serMatch(o: Ownship) = SerialList.contains(cfg.serials, o.serial)
-        fun tier(o: Ownship): Int? = when {
-            pinMatch(o) && o.isAirborne -> 0
-            pinMatch(o) -> 1
-            patMatch(o) && o.isAirborne -> 2
-            serMatch(o) && o.isAirborne -> 3
-            patMatch(o) -> 4
-            serMatch(o) -> 5
-            else -> null
-        }
-        fun modeOf(o: Ownship) = when {
-            pinMatch(o) -> SelectionMode.PINNED
-            patMatch(o) -> SelectionMode.CALLSIGN
-            else -> SelectionMode.SERIAL
-        }
+        val boundSerial = cfg.pinnedSerial.trim().takeIf { pinned != null }
+        // Only the pinned airframe is ever looked at. Freshest report wins (two feeds may carry it).
+        val report = if (pinned == null) null else drones.filter { normaliseSerial(it.serial) == pinned }.maxByOrNull { it.posTimeMs }
+        // Keep the last report when the feed drops it, so the engine can say "position lost" and then we fall back.
+        if (report != null && (watched == null || report.posTimeMs >= watched!!.posTimeMs)) watched = report
+        val cur = watched?.takeIf { pinned != null && normaliseSerial(it.serial) == pinned }
+        val prevMode = mode
+        // Acquire only on a fresh report; once watched, hold it through the lost window, then fall back.
+        val keep = cur != null && age(cur) <= (if (prevMode == SelectionMode.PINNED) cfg.fallbackSec else cfg.staleSec)
 
-        // The watched drone stays a candidate while its last position is fresh, even
-        // if the feed dropped it from this poll (it ages out after staleSec like any other).
-        val held = watched?.takeIf { w -> w.id !in byId }
-        val fresh = (byId.values + listOfNotNull(held)).filter { isFresh(it) }
-        val ranked = fresh.mapNotNull { d -> tier(d)?.let { d to it } }
-        val bestTier = ranked.minOfOrNull { it.second }
-        val inBest = ranked.filter { it.second == bestTier }.map { it.first }
-        val matchCount = fresh.count { pinMatch(it) || patMatch(it) || serMatch(it) }
-        val pinnedFresh = pinned != null && fresh.any { pinMatch(it) }
-
+        val newMode = if (keep) SelectionMode.PINNED else SelectionMode.CONTROLLER
         var note = when {
-            pat.invalid -> "Callsign pattern is not a valid regex"
-            pinned == null && pat.isBlank && cfg.serials.isEmpty() -> "No pinned serial, callsign pattern or serial set (Settings)"
+            pinned == null -> "No aircraft pinned: protecting this controller only (Settings)"
+            !keep -> "$boundSerial not in the feed; waiting for it (no other drone is ever watched)"
+            age(cur!!) > cfg.staleSec -> "$boundSerial: no position for ${age(cur).toInt()} s"
             else -> ""
         }
-        if (pinned != null && !pinnedFresh && !cfg.forceController)
-            note = listOf("Pinned ${cfg.pinnedSerial.trim()} not in the feed; still looking", note).filter { it.isNotEmpty() }.joinToString(" · ")
 
-        val prevMode = mode
-        val prevId = watchedId
-        val cur = watched
-        val curTier = cur?.let { if (isFresh(it)) tier(it) else null }
-
-        var newMode: SelectionMode
-        var newDrone: Ownship? = null
-        var fallbackReason: String? = null
-
-        if (cfg.forceController) {
-            newMode = SelectionMode.CONTROLLER
-            fallbackReason = "chosen"
-        } else if (cur != null && curTier != null && curTier == bestTier) {
-            newMode = modeOf(cur); newDrone = cur                            // keep watching
-        } else if (inBest.isNotEmpty()) {
-            newDrone = inBest.maxBy { it.posTimeMs }; newMode = modeOf(newDrone)
-        } else if (cur != null && !isFresh(cur) && tier(cur) != null && age(cur) <= cfg.fallbackSec) {
-            // stale but inside the grace window: keep it (engine says "Drone position lost")
-            newMode = prevMode ?: modeOf(cur); newDrone = cur
-        } else {
-            newMode = SelectionMode.CONTROLLER
-            fallbackReason = if (cur != null && prevMode != SelectionMode.CONTROLLER && !isFresh(cur)) "lost" else "none"
-        }
-
-        // ── transitions + speech ─────────────────────────────────────────
-        if (newMode != SelectionMode.CONTROLLER) {
-            val d = newDrone!!
+        if (newMode == SelectionMode.PINNED) {
+            val d = cur!!
             val name = d.callsign ?: d.name
-            if (newMode == SelectionMode.PINNED) {
-                if (prevId != d.id) {
-                    // "Watching" when the pilot has heard nothing yet (start-up); "Now watching" when it
-                    // replaces something already announced (another drone, or the controller).
-                    val heardNothing = prevMode == null || (prevMode == SelectionMode.CONTROLLER && pendingControllerSpeech != null)
-                    val lead = if (heardNothing) "Watching" else "Now watching"
-                    events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
-                        "$lead $name, this controller's aircraft.", "$lead ${Phrasing.spelledId(name)}, this controller's aircraft.")
-                }
-                // A different drone matches the callsign pattern (or the serial list): the pin wins. Said once.
-                val rival = fresh.firstOrNull { it.id != d.id && (patMatch(it) || serMatch(it)) }
-                if (rival != null && !pinConflictAnnounced) {
-                    val rn = rival.callsign ?: rival.name
-                    events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
-                        "Pinned aircraft wins over $rn.", "Pinned aircraft wins.")
-                    pinConflictAnnounced = true
-                }
-                if (rival != null) note = listOf(note, "Pinned aircraft wins over ${rival.callsign ?: rival.name}").filter { it.isNotEmpty() }.joinToString(" · ")
-            } else {
-                pinConflictAnnounced = false
-            }
-            val bySerial = if (newMode == SelectionMode.SERIAL) " by serial" else ""
-            if (prevId != d.id && newMode != SelectionMode.PINNED) {
-                val multi = inBest.size > 1 && inBest.contains(d)
-                val lead = when {
-                    multi -> "Multiple matches, watching"
-                    prevMode == null || prevMode == SelectionMode.CONTROLLER -> "Watching"
-                    else -> "Now watching"
-                }
+            if (prevMode != SelectionMode.PINNED)
                 events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
-                    "$lead $name$bySerial.", "$lead ${Phrasing.spelledId(name)}$bySerial.")
-            }
+                    "Watching $name, this controller's aircraft.", "Watching ${Phrasing.spelledId(name)}, this controller's aircraft.")
             pendingControllerSpeech = null
             controllerGpsAnnouncedLost = false
-            watchedId = d.id; watched = d
-            if (inBest.size > 1) note = listOf(note, "${inBest.size} drones match; watching ${name}").filter { it.isNotEmpty() }.joinToString(" · ")
         } else {
             if (prevMode != SelectionMode.CONTROLLER) {
                 controllerModeSinceMs = nowMs
-                val text = when (fallbackReason) {
-                    "chosen" -> "Protecting this controller."
-                    "lost" -> "No drone position for ${cfg.fallbackSec.toInt()} seconds. Protecting this controller."
-                    else -> "No drone selected. Protecting this controller."
-                }
-                // At start-up, hold the "no drone" line for a few seconds: the first fleet poll may still be in flight.
-                if (prevMode == null && fallbackReason == "none") pendingControllerSpeech = text
-                else events += AlertEvent(nowMs, EventKind.SELECTION, Severity.CAUTION.takeIf { fallbackReason == "lost" } ?: Severity.INFO, text)
+                val droppedOut = prevMode == SelectionMode.PINNED
+                val text = if (pinned != null) "Waiting for this controller's aircraft." else "No aircraft pinned. Protecting this controller."
+                if (prevMode == null) pendingControllerSpeech = text                 // start-up: wait for the first fleet poll
+                else events += AlertEvent(nowMs, EventKind.SELECTION, if (droppedOut) Severity.CAUTION else Severity.INFO, text)
             }
             pendingControllerSpeech?.let { t ->
                 if (nowMs - firstMs!! >= cfg.startupGraceSec * 1000) {
@@ -366,8 +217,7 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
                     pendingControllerSpeech = null
                 }
             }
-            watchedId = null; watched = null
-            pinConflictAnnounced = false
+            watched = null
         }
         mode = newMode
 
@@ -387,7 +237,7 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         }
 
         val own: Ownship? = when {
-            newMode != SelectionMode.CONTROLLER -> newDrone
+            newMode == SelectionMode.PINNED -> cur
             usable -> Ownship(
                 id = "controller", name = "this controller",
                 lat = controller!!.lat, lon = controller.lon,
@@ -397,8 +247,8 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
             )
             else -> null
         }
-        return Result(newMode, own, if (newMode != SelectionMode.CONTROLLER) newDrone else null, events, note,
-            matchCount, controller, fixAge, usable)
+        return Result(newMode, own, if (newMode == SelectionMode.PINNED) cur else null, events, note,
+            controller, fixAge, usable, boundSerial = boundSerial, waitingForBound = pinned != null && newMode == SelectionMode.CONTROLLER)
     }
 }
 

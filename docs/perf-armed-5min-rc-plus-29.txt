@@ -1,0 +1,73 @@
+# v0.3.3 resource use, rc-plus-29 AVD (1920x1200, density 400, Android 10, 4 vCPU, swiftshader GL), 2026-09-24
+# Armed LIVE (mock fleet feed with 2 synthetic drones + the real cloud ADS-B/TFR feeds), Android Settings app in front.
+
+## Run A: process that had shown the main screen earlier (UI stopped, not destroyed), 309 s
+CPU: 10.19 s of CPU in 309 s = 3.30% of one core = 0.83% of the device
+dumpsys meminfo: TOTAL PSS 138 MB (Native Heap 96 MB: 40 MB allocated / 61 MB free, Java heap 17 MB, code 13 MB)
+12:11:51 top:  4.0 243M S com.uasflightdeck.sentry | VmRSS 249340 kB
+12:12:01 top:  0.0 229M S com.uasflightdeck.sentry | VmRSS 234972 kB
+12:12:12 top:  0.0 218M S com.uasflightdeck.sentry | VmRSS 223224 kB
+12:12:22 top: 16.0 233M S com.uasflightdeck.sentry | VmRSS 235452 kB
+12:12:32 top:  0.0 201M S com.uasflightdeck.sentry | VmRSS 206256 kB
+12:12:43 top:  0.0 231M S com.uasflightdeck.sentry | VmRSS 236660 kB
+12:12:53 top:  0.0 238M S com.uasflightdeck.sentry | VmRSS 244072 kB
+12:13:03 top:  0.0 242M S com.uasflightdeck.sentry | VmRSS 248276 kB
+12:13:13 top:  4.0 218M S com.uasflightdeck.sentry | VmRSS 223676 kB
+12:13:24 top:  0.0 210M S com.uasflightdeck.sentry | VmRSS 215252 kB
+12:13:34 top:  0.0 220M S com.uasflightdeck.sentry | VmRSS 225708 kB
+12:13:44 top:  0.0 190M S com.uasflightdeck.sentry | VmRSS 194444 kB
+12:13:55 top:  0.0 222M S com.uasflightdeck.sentry | VmRSS 227456 kB
+12:14:05 top:  4.0 205M S com.uasflightdeck.sentry | VmRSS 210996 kB
+12:14:15 top:  0.0 218M S com.uasflightdeck.sentry | VmRSS 222884 kB
+12:14:25 top:  0.0 219M S com.uasflightdeck.sentry | VmRSS 224340 kB
+12:14:36 top:  0.0 221M S com.uasflightdeck.sentry | VmRSS 226768 kB
+12:14:46 top: 44.0 239M S com.uasflightdeck.sentry | VmRSS 239640 kB
+12:14:56 top:  4.0 243M S com.uasflightdeck.sentry | VmRSS 248608 kB
+12:15:07 top:  0.0 226M S com.uasflightdeck.sentry | VmRSS 231520 kB
+12:15:17 top:  0.0 255M S com.uasflightdeck.sentry | VmRSS 261364 kB
+12:15:27 top:  0.0 253M S com.uasflightdeck.sentry | VmRSS 259256 kB
+12:15:37 top:  0.0 247M S com.uasflightdeck.sentry | VmRSS 253408 kB
+12:15:48 top:  0.0 228M S com.uasflightdeck.sentry | VmRSS 233564 kB
+12:15:58 top:  0.0 222M S com.uasflightdeck.sentry | VmRSS 227772 kB
+12:16:08 top:  8.0 255M S com.uasflightdeck.sentry | VmRSS 260816 kB
+12:16:19 top:  0.0 245M S com.uasflightdeck.sentry | VmRSS 250608 kB
+12:16:29 top:  0.0 209M S com.uasflightdeck.sentry | VmRSS 214360 kB
+12:16:39 top:  0.0 209M S com.uasflightdeck.sentry | VmRSS 213908 kB
+12:16:49 top:  0.0 203M S com.uasflightdeck.sentry | VmRSS 207400 kB
+
+## Run B: service only (started with am start-foreground-service; no activity ever drawn), 272 s
+CPU: 9.15 s of CPU in 272 s = 3.37% of one core = 0.84% of the device
+PSS avg 102.7 MB, max 135.7 MB (first sample), 76.4 MB at the end; VmRSS avg 183.7 MB, max 216.7 MB
+12:18:17 VmRSS 132992 kB PSS 51029 kB
+12:18:26 VmRSS 204164 kB PSS 122056 kB
+12:18:35 VmRSS 179096 kB PSS 97149 kB
+12:18:44 VmRSS 220952 kB PSS 138513 kB
+12:18:53 VmRSS 208716 kB PSS 126364 kB
+12:19:02 VmRSS 203868 kB PSS 121136 kB
+12:19:11 VmRSS 220360 kB PSS 137732 kB
+12:19:20 VmRSS 221944 kB PSS 138952 kB
+12:19:30 VmRSS 174636 kB PSS 92071 kB
+12:19:39 VmRSS 164648 kB PSS 81543 kB
+12:19:48 VmRSS 194628 kB PSS 111967 kB
+12:19:57 VmRSS 189656 kB PSS 106809 kB
+12:20:06 VmRSS 193248 kB PSS 110268 kB
+12:20:15 VmRSS 164048 kB PSS 80703 kB
+12:20:24 VmRSS 199268 kB PSS 115607 kB
+12:20:33 VmRSS 191796 kB PSS 108443 kB
+12:20:42 VmRSS 189964 kB PSS 106647 kB
+12:20:51 VmRSS 161088 kB PSS 77955 kB
+12:21:00 VmRSS 183160 kB PSS 99990 kB
+12:21:09 VmRSS 164080 kB PSS 80782 kB
+12:21:18 VmRSS 211164 kB PSS 127906 kB
+12:21:27 VmRSS 200956 kB PSS 117478 kB
+12:21:36 VmRSS 182968 kB PSS 99598 kB
+12:21:45 VmRSS 179592 kB PSS 96482 kB
+12:21:55 VmRSS 212488 kB PSS 129317 kB
+12:22:04 VmRSS 200860 kB PSS 117745 kB
+12:22:13 VmRSS 117812 kB PSS 34889 kB
+12:22:22 VmRSS 168120 kB PSS 85293 kB
+12:22:31 VmRSS 200244 kB PSS 117349 kB
+12:22:40 VmRSS 206000 kB PSS 123085 kB
+
+## Baseline on the same image (RSS counts shared framework pages)
+com.android.phone RSS 138 MB / PSS 32 MB; com.google.android.tts RSS 160 MB / PSS 80 MB; com.android.systemui RSS 215 MB / PSS 78 MB

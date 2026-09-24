@@ -17,7 +17,6 @@ import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
 import android.widget.CheckBox
 import android.widget.EditText
-import android.widget.MultiAutoCompleteTextView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -33,8 +32,9 @@ import com.google.android.material.button.MaterialButton
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.uasflightdeck.sentry.core.CallsignPattern
 import com.uasflightdeck.sentry.core.Cylinder
+import com.uasflightdeck.sentry.core.DroneSelector
+import com.uasflightdeck.sentry.core.FleetStatus
 import com.uasflightdeck.sentry.core.CylinderAltRef
 import com.uasflightdeck.sentry.core.Parsers
 import com.uasflightdeck.sentry.core.Units
@@ -45,7 +45,9 @@ import java.io.File
 import java.util.Locale
 
 /**
- * One scrolling page: two columns at 1000 dp and wider, one column on the RC Plus (~960 dp). Values are saved
+ * One scrolling page: two columns at 1000 dp and wider, one column on the RC Plus (~768 dp). On the
+ * controller the order is: alert rings (+ targets shown), controller cylinders, this controller's aircraft,
+ * then feeds, voice, geofences, background, app update, and the replay last. Values are saved
  * on "Save" and when leaving the screen; the service picks them up on its
  * next 1 s tick.
  */
@@ -54,16 +56,13 @@ class SettingsActivity : AppCompatActivity() {
     private val savers = ArrayList<() -> Unit>()
     private lateinit var geofenceStatus: TextView
     private lateinit var batteryStatus: TextView
-    private lateinit var patternField: AutoCompleteTextView
     private lateinit var pinnedField: AutoCompleteTextView
     private lateinit var pinnedNote: TextView
     private lateinit var updateInfo: TextView
     private lateinit var updateNotes: TextView
     private lateinit var updateStatus: TextView
     private lateinit var updateInstallBtn: MaterialButton
-    private lateinit var serialField: MultiAutoCompleteTextView
-    private lateinit var patternPreview: TextView
-    private lateinit var protectSwitch: SwitchCompat
+    private lateinit var feedList: LinearLayout
     private lateinit var cylinderList: LinearLayout
     private lateinit var locStatus: TextView
 
@@ -102,71 +101,67 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(ScrollView(this).apply { addView(cols) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
 
-        // ── LEFT column ────────────────────────────────────────────────────
-        section(left, "Replay (see it work)").apply {
-            addView(note("Plays a real encounter recorded from public ADS-B data (DEMO-1 vs N388KM, TFR 0/0000) through the live engine, voice and notifications."))
-            val speeds = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL }
-            val r1 = radio("1×", 101); val r4 = radio("4×", 104)
-            speeds.addView(r1); speeds.addView(r4)
-            speeds.check(if (s.replaySpeed >= 4) 104 else 101)
-            addView(speeds)
-            val cloud = CheckBox(this@SettingsActivity).apply {
-                text = "Public-feed view (N388KM reporting alt \"ground\", no track)"; setTextColor(col(R.color.ink)); textSize = 16f; isChecked = s.replayCloudView }
-            addView(cloud)
-            savers += { s.replaySpeed = if (speeds.checkedRadioButtonId == 104) 4.0 else 1.0; s.replayCloudView = cloud.isChecked }
-            addView(row(
-                button("Replay: demo encounter") {
-                    saveAll()
-                    SentryService.send(this@SettingsActivity, SentryService.ACTION_REPLAY) {
-                        it.putExtra(SentryService.EXTRA_SPEED, s.replaySpeed); it.putExtra(SentryService.EXTRA_CLOUD_VIEW, s.replayCloudView)
-                    }
-                    finish()
-                },
-                button("Stop replay", secondary = true) { SentryService.send(this@SettingsActivity, SentryService.ACTION_REPLAY_STOP) },
-            ))
+        // ── Column A (top on the controller): alert rings + targets shown, controller cylinders, this controller's aircraft ──
+        section(left, "Alert rings around the drone").apply {
+            val a = num("Advisory ring (nm)", s.advisoryNm)
+            val c = num("Caution ring (nm)", s.cautionNm)
+            val w = num("Warning ring (nm)", s.warningNm)
+            val band = num("Ceiling above aircraft (ft): protected from the surface up to this far above it", s.ceilingAboveFt)
+            val baro = num("Baro correction when no GPS altitude (ft, \"estimated\")", s.baroCorrectionFt)
+            val cpa = num("Predictive look-ahead (s)", s.cpaHorizonSec)
+            val tfr = num("Watch TFRs within (nm of drone)", s.tfrRelevanceNm)
+            addView(label("TARGETS SHOWN in the list and on the compass (alerts are not affected)"))
+            val ta = num("Show targets within (nm of this controller's aircraft)", s.targetsAircraftNm)
+            val tc = num("Show targets within (nm of the controller, when the aircraft isn't in the feed)", s.targetsControllerNm)
+            val tceil = num("Hide targets above (ft: GPS altitude, else baro; unknown altitude stays shown)", s.targetsCeilingFt)
+            addView(note("An aircraft Sentry is alerting on is always shown, wherever it is."))
+            savers += {
+                val av = a.d(); val cv = c.d(); val wv = w.d()
+                if (av != null && cv != null && wv != null && wv > 0 && cv >= wv && av >= cv) { s.advisoryNm = av; s.cautionNm = cv; s.warningNm = wv }
+                else toast("Rings must be advisory ≥ caution ≥ warning > 0 — kept previous")
+                band.d()?.takeIf { it > 0 }?.let { s.ceilingAboveFt = it }; baro.d()?.let { s.baroCorrectionFt = it }
+                cpa.d()?.let { s.cpaHorizonSec = it }; tfr.d()?.let { s.tfrRelevanceNm = it }
+                ta.d()?.takeIf { it > 0 }?.let { s.targetsAircraftNm = it }; tc.d()?.takeIf { it > 0 }?.let { s.targetsControllerNm = it }
+                tceil.d()?.takeIf { it > 0 }?.let { s.targetsCeilingFt = it }
+            }
         }
 
-        section(left, "Drone selection").apply {
-            addView(label("This controller's aircraft (serial)"))
-            pinnedField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.pinnedSerial); hint = "type it once: Sentry watches this airframe first, forever" }
+        section(left, "Controller cylinders (when the aircraft isn't in the feed)").apply {
+            addView(note("While this controller's aircraft is not in the feed (or none is pinned), Sentry protects these cylinders centred on this controller's GPS. It calls aircraft entering them, and warns early when one is predicted to pass within the warning ring of the controller."))
+            cylinderList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(cylinderList)
+            renderCylinders()
+            addView(row(button("Add cylinder", secondary = true) { editCylinder(null) }))
+            val elev = num("Controller elevation override (ft MSL, blank = GPS)", s.controllerElevFt)
+            savers += { s.controllerElevFt = elev.d() ?: Double.NaN }
+            locStatus = note(locText()); addView(locStatus)
+            addView(row(button("Allow location…", secondary = true) { askLoc.launch(Manifest.permission.ACCESS_FINE_LOCATION) }))
+        }
+
+        section(left, "This controller's aircraft").apply {
+            addView(note("Sentry protects ONLY this airframe, by serial. No other drone is ever watched. When it is not in the feed, Sentry says \"Waiting for this controller's aircraft\", protects the controller cylinders above, and switches to the aircraft the moment it appears."))
+            addView(label("Aircraft serial"))
+            pinnedField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.pinnedSerial); hint = "type the airframe serial, or tap an aircraft below" }
             addView(pinnedField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
             pinnedNote = note(""); addView(pinnedNote)
-            addView(row(
-                button("Use the drone I'm watching now", secondary = true) { useWatchedDrone() },
-                button("Clear", secondary = true) { pinnedField.setText(""); s.pinnedSerial = ""; updatePinnedNote() },
-            ))
+            addView(row(button("Clear", secondary = true) { pinnedField.setText(""); s.pinnedSerial = ""; updatePinnedNote(); renderFeedList() }))
+            addView(label("Aircraft in the feed now: tap one to pin it"))
+            feedList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(feedList)
+            addView(row(button("Refresh list", secondary = true) { fetchLiveAircraft() }))
             pinnedField.addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
                 override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
                 override fun afterTextChanged(e: android.text.Editable?) = updatePinnedNote()
             })
             savers += { s.pinnedSerial = pinnedField.text.toString() }
-            addView(label("My callsign pattern"))
-            patternField = AutoCompleteTextView(this@SettingsActivity).apply { styleField(this); setText(s.callsignPattern); hint = "e.g. DEMO-# Pilot" }
-            addView(patternField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
-            patternPreview = note(""); addView(patternPreview)
-            addView(note("# = any digit · * = anything · spaces and hyphens are optional · start with re: for a regex. Suggestions are callsigns Sentry has seen."))
-            addView(label("My aircraft serials (comma or newline separated)"))
-            serialField = MultiAutoCompleteTextView(this@SettingsActivity).apply {
-                styleField(this); setText(s.serials); hint = "used when no callsign matches"; setTokenizer(MultiAutoCompleteTextView.CommaTokenizer())
-            }
-            addView(serialField, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
-            protectSwitch = switch("Protect this controller (ignore drones)", s.protectController)
-            addView(row(button("Pick a drone…", secondary = true) {
-                saveAll(); DronePicker.show(this@SettingsActivity, s) { patternField.setText(s.callsignPattern); protectSwitch.isChecked = s.protectController; updatePreview() }
-            }))
-            patternField.addTextChangedListener(object : android.text.TextWatcher {
-                override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
-                override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
-                override fun afterTextChanged(e: android.text.Editable?) = updatePreview()
-            })
-            savers += { s.callsignPattern = patternField.text.toString(); s.serials = serialField.text.toString(); s.protectController = protectSwitch.isChecked }
             refreshSuggestions()
-            updatePreview()
             updatePinnedNote()
+            renderFeedList()
         }
 
-        section(left, "Fleet feed (drone position)").apply {
+        // ── Column B: feeds, voice, geofences, background, app update, replay ──
+        section(right, "Fleet feed (drone position)").apply {
             val token = field("Fleet token (X-Fleet-Token)", if (s.fleetTokenIsDefault) "" else s.fleetToken,
                 hint = if (s.fleetTokenIsDefault) "using token built into this APK" else "paste token", password = true)
             addView(button("Paste token from clipboard", secondary = true) {
@@ -178,7 +173,7 @@ class SettingsActivity : AppCompatActivity() {
             savers += { if (token.text.isNotBlank() || !s.fleetTokenIsDefault) s.fleetToken = token.text.toString(); s.workerBase = base.text.toString() }
         }
 
-        section(left, "Traffic sources (all run together)").apply {
+        section(right, "Traffic sources (all run together)").apply {
             val st = switch("Truck station (Overwatch) over Wi-Fi", s.stationEnabled)
             val url = field("Station address", s.stationUrl, hint = "192.168.1.20 or http://host:8080")
             val auto = switch("Auto-discover station (Overwatch LAN beacon)", s.stationAutoDiscover)
@@ -188,55 +183,13 @@ class SettingsActivity : AppCompatActivity() {
                 s.cloudEnabled = cloud.isChecked; radius.d()?.let { s.trafficRadiusNm = it } }
         }
 
-        section(left, "Voice").apply {
+        section(right, "Voice").apply {
             val v = switch("Voice callouts", s.voiceOn)
             addView(label("Volume"))
             val vol = SeekBar(this@SettingsActivity).apply { max = 100; progress = (s.volume * 100).toInt() }
             addView(vol)
             savers += { s.voiceOn = v.isChecked; s.volume = vol.progress / 100.0 }
             addView(button("Test callout", secondary = true) { saveAll(); SentryService.send(this@SettingsActivity, SentryService.ACTION_TEST) })
-        }
-
-        // ── RIGHT column ───────────────────────────────────────────────────
-        section(right, "App update (GitHub releases)").apply {
-            updateInfo = TextView(this@SettingsActivity).apply { textSize = 17f; setTextColor(col(R.color.ink)); setPadding(0, dp(4), 0, dp(4)) }
-            addView(updateInfo)
-            updateNotes = note(""); updateNotes.maxLines = 14; addView(updateNotes)
-            updateStatus = note(""); addView(updateStatus)
-            updateInstallBtn = button("Download and install") { startUpdate(this@SettingsActivity, s) }
-            addView(row(button("Check for update", secondary = true) { Updater.check(this@SettingsActivity, manual = true) }, updateInstallBtn))
-            lifecycleScope.launch {
-                repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { Updater.state.collect { renderUpdate() } }
-            }
-        }
-
-        section(right, "Alert rings around the drone").apply {
-            val a = num("Advisory ring (nm)", s.advisoryNm)
-            val c = num("Caution ring (nm)", s.cautionNm)
-            val w = num("Warning ring (nm)", s.warningNm)
-            val band = num("Vertical band ± (ft)", s.verticalBandFt)
-            val baro = num("Baro correction when no GPS altitude (ft, \"estimated\")", s.baroCorrectionFt)
-            val cpa = num("Predictive look-ahead (s)", s.cpaHorizonSec)
-            val tfr = num("Watch TFRs within (nm of drone)", s.tfrRelevanceNm)
-            savers += {
-                val av = a.d(); val cv = c.d(); val wv = w.d()
-                if (av != null && cv != null && wv != null && wv > 0 && cv >= wv && av >= cv) { s.advisoryNm = av; s.cautionNm = cv; s.warningNm = wv }
-                else toast("Rings must be advisory ≥ caution ≥ warning > 0 — kept previous")
-                band.d()?.let { s.verticalBandFt = it }; baro.d()?.let { s.baroCorrectionFt = it }
-                cpa.d()?.let { s.cpaHorizonSec = it }; tfr.d()?.let { s.tfrRelevanceNm = it }
-            }
-        }
-
-        section(right, "Controller protection (no drone selected)").apply {
-            addView(note("When no drone is selected (no callsign or serial match, the drone's position lost for 30 s, or \"Protect this controller\"), Sentry protects these cylinders centred on this controller's GPS. It calls aircraft entering them, and warns early when one is predicted to pass within the warning ring of the controller."))
-            cylinderList = LinearLayout(this@SettingsActivity).apply { orientation = LinearLayout.VERTICAL }
-            addView(cylinderList)
-            renderCylinders()
-            addView(row(button("Add cylinder", secondary = true) { editCylinder(null) }))
-            val elev = num("Controller elevation override (ft MSL, blank = GPS)", s.controllerElevFt)
-            savers += { s.controllerElevFt = elev.d() ?: Double.NaN }
-            locStatus = note(locText()); addView(locStatus)
-            addView(row(button("Allow location…", secondary = true) { askLoc.launch(Manifest.permission.ACCESS_FINE_LOCATION) }))
         }
 
         section(right, "Geofences").apply {
@@ -260,13 +213,48 @@ class SettingsActivity : AppCompatActivity() {
             batteryStatus = note(batteryText()); addView(batteryStatus)
             addView(button("Battery optimisation exemption…", secondary = true) { requestBattery() })
         }
+        section(right, "App update (GitHub releases)").apply {
+            updateInfo = TextView(this@SettingsActivity).apply { textSize = 17f; setTextColor(col(R.color.ink)); setPadding(0, dp(4), 0, dp(4)) }
+            addView(updateInfo)
+            updateNotes = note(""); updateNotes.maxLines = 14; addView(updateNotes)
+            updateStatus = note(""); addView(updateStatus)
+            updateInstallBtn = button("Download and install") { startUpdate(this@SettingsActivity, s) }
+            addView(row(button("Check for update", secondary = true) { Updater.check(this@SettingsActivity, manual = true) }, updateInstallBtn))
+            lifecycleScope.launch {
+                repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { Updater.state.collect { renderUpdate() } }
+            }
+        }
+
+        section(right, "Replay (see it work)").apply {
+            addView(note("Plays a real encounter recorded from public ADS-B data (DEMO-1 vs N388KM, TFR 0/0000) through the live engine, voice and notifications."))
+            val speeds = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL }
+            val r1 = radio("1×", 101); val r4 = radio("4×", 104)
+            speeds.addView(r1); speeds.addView(r4)
+            speeds.check(if (s.replaySpeed >= 4) 104 else 101)
+            addView(speeds)
+            val cloud = CheckBox(this@SettingsActivity).apply {
+                text = "Public-feed view (N388KM reporting alt \"ground\", no track)"; setTextColor(col(R.color.ink)); textSize = 16f; isChecked = s.replayCloudView }
+            addView(cloud)
+            savers += { s.replaySpeed = if (speeds.checkedRadioButtonId == 104) 4.0 else 1.0; s.replayCloudView = cloud.isChecked }
+            addView(row(
+                button("Replay: demo encounter") {
+                    saveAll()
+                    SentryService.send(this@SettingsActivity, SentryService.ACTION_REPLAY) {
+                        it.putExtra(SentryService.EXTRA_SPEED, s.replaySpeed); it.putExtra(SentryService.EXTRA_CLOUD_VIEW, s.replayCloudView)
+                    }
+                    finish()
+                },
+                button("Stop replay", secondary = true) { SentryService.send(this@SettingsActivity, SentryService.ACTION_REPLAY_STOP) },
+            ))
+        }
+
     }
 
     override fun onResume() {
         super.onResume()
         if (::batteryStatus.isInitialized) batteryStatus.text = batteryText()
         if (::locStatus.isInitialized) locStatus.text = locText()
-        fetchLiveCallsigns()
+        fetchLiveAircraft()
         renderUpdate()
         Updater.check(this)          // rate-limited: at most daily
     }
@@ -277,7 +265,7 @@ class SettingsActivity : AppCompatActivity() {
         val ui = Updater.state.value
         val latest = Updater.latest(s)
         val avail = Updater.available(s)
-        val checked = s.updateLastSuccessMs.takeIf { it > 0 }?.let { DronePicker.ago(System.currentTimeMillis() - it) }
+        val checked = s.updateLastSuccessMs.takeIf { it > 0 }?.let { DroneHistory.ago(System.currentTimeMillis() - it) }
         val sb = android.text.SpannableStringBuilder()
         sb.append("Installed: ${Updater.current} (build ${BuildConfig.VERSION_CODE})\n")
         sb.append("Latest on GitHub: ")
@@ -321,32 +309,46 @@ class SettingsActivity : AppCompatActivity() {
         updateInstallBtn.text = if (ui.downloading) "Downloading ${ui.progressPct ?: 0}%" else if (avail) "Download and install ${latest?.version}" else "Download and install"
     }
 
-    // ── pinned serial ───────────────────────────────────────────────────────
-    private fun useWatchedDrone() {
-        val st = SentryBus.state.value
-        val o = st.ownship
-        when {
-            st.mode == Mode.OFF -> toast("Sentry isn't armed: arm it (or run the replay) so it is watching a drone")
-            o == null || st.selectionMode == com.uasflightdeck.sentry.core.SelectionMode.CONTROLLER -> toast("Not watching a drone right now")
-            o.serial.isNullOrBlank() -> toast("The feed gives no serial for ${o.callsign ?: o.name}")
-            else -> {
-                pinnedField.setText(o.serial); s.pinnedSerial = o.serial!!
-                toast("Pinned ${o.serial} (${o.callsign ?: o.name}) as this controller's aircraft")
-            }
-        }
-        updatePinnedNote()
-    }
-
+    // ── this controller's aircraft ─────────────────────────────────────────
     private fun updatePinnedNote() {
         if (!::pinnedNote.isInitialized) return
         val v = pinnedField.text.toString().trim()
         val e = DroneHistory.entries(this)
         val cs = e.firstOrNull { it.serial?.trim()?.equals(v, ignoreCase = true) == true }?.callsign
-        pinnedNote.setTextColor(col(if (v.isEmpty()) R.color.dim else if (cs != null) R.color.ok else R.color.caution))
+        pinnedNote.setTextColor(col(if (v.isEmpty()) R.color.caution else if (cs != null) R.color.ok else R.color.caution))
         pinnedNote.text = when {
-            v.isEmpty() -> "Not set. When set, this airframe is watched first (airborne, else on the pad), even if the callsign pattern matches another drone."
-            cs != null -> "Pinned: $v · last seen as $cs. Watched first whenever it is in the feed."
-            else -> "Pinned: $v · not seen yet. Sentry keeps looking for it and switches the moment it appears."
+            v.isEmpty() -> "Not pinned: Sentry protects this controller only."
+            cs != null -> "Bound to $v · last seen as $cs."
+            else -> "Bound to $v · not seen yet: Sentry waits for it and switches the moment it appears."
+        }
+    }
+
+    /** The aircraft in the latest fleet poll (serial · callsign · model); tapping one pins it. */
+    private fun renderFeedList() {
+        if (!::feedList.isInitialized) return
+        feedList.removeAllViews()
+        val pinned = DroneSelector.normaliseSerial(pinnedField.text.toString())
+        val list = DroneHistory.inFeedNow.sortedBy { (it.callsign ?: it.name).lowercase() }
+        if (list.isEmpty()) {
+            val why = DroneHistory.feedStatus.ifEmpty { "not fetched yet" }
+            feedList.addView(note("No aircraft in the feed right now ($why)."))
+            return
+        }
+        for (d in list) {
+            val serial = d.serial
+            val mine = serial != null && DroneSelector.normaliseSerial(serial) == pinned
+            val text = listOfNotNull(serial ?: "no serial in feed", d.callsign ?: d.name, d.model).joinToString("  ·  ") + if (mine) "   ✓ pinned" else ""
+            val b = button(text, secondary = !mine) {
+                if (serial == null) toast("The feed gives no serial for ${d.callsign ?: d.name}: it can't be pinned")
+                else {
+                    pinnedField.setText(serial); s.pinnedSerial = serial
+                    toast("Pinned $serial (${d.callsign ?: d.name}) as this controller's aircraft")
+                    renderFeedList()
+                }
+            }
+            b.gravity = Gravity.START or Gravity.CENTER_VERTICAL; b.letterSpacing = 0f
+            if (serial == null) b.alpha = 0.5f
+            feedList.addView(b, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
         }
     }
 
@@ -371,39 +373,26 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun refreshSuggestions() {
-        val e = DroneHistory.entries(this)
-        patternField.setAdapter(darkAdapter(e.map { it.callsign }))
-        serialField.setAdapter(darkAdapter(e.mapNotNull { it.serial }.distinct()))
-        if (::pinnedField.isInitialized) pinnedField.setAdapter(darkAdapter(e.mapNotNull { it.serial }.distinct()))
+        if (::pinnedField.isInitialized) pinnedField.setAdapter(darkAdapter(DroneHistory.entries(this).mapNotNull { it.serial }.distinct()))
     }
 
-    /** Live preview of what the typed pattern matches among the callsigns Sentry knows. */
-    private fun updatePreview() {
-        if (!::patternPreview.isInitialized) return
-        val p = CallsignPattern.compile(patternField.text.toString())
-        val known = DroneHistory.entries(this).map { it.callsign }
-        val hits = known.filter { p.matches(it) }
-        patternPreview.setTextColor(col(if (p.invalid) R.color.warning else if (hits.isEmpty()) R.color.dim else R.color.ok))
-        patternPreview.text = when {
-            p.invalid -> "Not a valid regular expression"
-            p.isBlank -> "No pattern: Sentry protects this controller unless a serial matches"
-            hits.isEmpty() -> "Matches none of the ${known.size} callsign(s) seen so far"
-            else -> "Matches: " + hits.take(6).joinToString(", ") + if (hits.size > 6) " …" else ""
-        }
-    }
-
-    /** One fetch of the live fleet feed when Settings opens, so callsigns airborne right now are suggested even if Sentry is not armed. */
-    private fun fetchLiveCallsigns() {
-        val token = s.fleetToken.takeIf { it.isNotBlank() } ?: return
+    /** One fetch of the fleet feed when Settings opens (and on "Refresh list"), so the aircraft airborne right now can be pinned without arming. */
+    private fun fetchLiveAircraft() {
+        val token = s.fleetToken
+        if (token.isBlank()) { DroneHistory.feedStatus = FleetStatus.NO_TOKEN; renderFeedList(); return }
         val base = s.workerBase.trimEnd('/')
         lifecycleScope.launch {
-            val drones = withContext(Dispatchers.IO) {
+            val (drones, status) = withContext(Dispatchers.IO) {
                 val http = Http(); val hdr = mapOf("X-Fleet-Token" to token); val now = System.currentTimeMillis()
-                runCatching { Parsers.parseDroneSense(http.get("$base/api/live/dronesense", hdr), now) }.getOrDefault(emptyList()) +
-                    runCatching { Parsers.parseOurDrones(http.get("$base/api/live/our-drones", hdr), now).drones }.getOrDefault(emptyList())
+                val ds = runCatching { Parsers.parseDroneSense(http.get("$base/api/live/dronesense", hdr), now) }
+                val fda = runCatching { Parsers.parseOurDrones(http.get("$base/api/live/our-drones", hdr), now).drones }
+                fun <T : List<*>> fetch(r: Result<T>) = FleetStatus.Fetch(r.getOrNull()?.size, r.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName })
+                val st = FleetStatus.of(false, fetch(fda), fetch(ds))
+                ((ds.getOrNull().orEmpty() + fda.getOrNull().orEmpty()) to st)
             }
-            if (drones.isNotEmpty()) DroneHistory.observeLive(this@SettingsActivity, drones, System.currentTimeMillis())
-            if (::patternField.isInitialized) { refreshSuggestions(); updatePreview(); updatePinnedNote() }
+            DroneHistory.feedStatus = status.detail
+            if (status.ok) DroneHistory.observeLive(this@SettingsActivity, drones, System.currentTimeMillis())
+            refreshSuggestions(); updatePinnedNote(); renderFeedList()
         }
     }
 
@@ -433,7 +422,7 @@ class SettingsActivity : AppCompatActivity() {
         val radius = box.num("Radius", if (useFt) c.radiusNm * Units.FT_PER_NM else c.radiusNm)
         val unit = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         unit.addView(radio("nm", 301)); unit.addView(radio("ft", 302)); unit.check(if (useFt) 302 else 301); box.addView(unit)
-        val floor = box.num("Floor (ft)", c.floorFt)
+        val floor = box.num("Floor (ft; 0 = SFC, the surface)", c.floorFt)
         val ceil = box.num("Ceiling (ft)", c.ceilingFt)
         val ref = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         ref.addView(radio("ft above controller", 311)); ref.addView(radio("ft MSL", 312))

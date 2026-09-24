@@ -26,8 +26,10 @@ data class Ownship(
     val source: OwnshipSource,
     /** The feed's callsign (DroneSense `callSign`, FDA `drone.callsign`); null if the feed had none. */
     val callsign: String? = null,
-    /** Airframe serial (DroneSense `serial`); used for the serial allowlist. */
+    /** Airframe serial (DroneSense `serial`, FDA `drone.serial`): what a controller is pinned to. */
     val serial: String? = null,
+    /** Aircraft model when the feed gives one (e.g. "M4T"), for the "aircraft in feed now" list. */
+    val model: String? = null,
     /** Ground speed in m/s when the feed gives one (DroneSense `speed`). */
     val speedMs: Double? = null,
 ) {
@@ -165,7 +167,12 @@ data class SentryConfig(
     val advisoryNm: Double = 3.0,
     val cautionNm: Double = 1.0,
     val warningNm: Double = 0.5,
-    val verticalBandFt: Double = 2000.0,
+    /**
+     * The protected volume around the drone runs from the SURFACE up to this many feet above the drone
+     * (owner, v0.3.3: "we never want anything flying under us"). There is no lower limit; unknown altitude
+     * counts as inside. Replaces the symmetric ±2,000 ft band of 0.1-0.3.2.
+     */
+    val ceilingAboveFt: Double = 2000.0,
     val baroCorrectionFt: Double = 300.0,
     val cpaHorizonSec: Double = 60.0,
     val reannounceSec: Double = 20.0,
@@ -183,6 +190,7 @@ data class SentryConfig(
     val unknownTfrCeilingFt: Double = 18_000.0,
     /** Hysteresis on ring exits so a target on a ring edge doesn't flap. */
     val ringHysteresisNm: Double = 0.2,
+    /** Hysteresis on the ceiling above the drone once alerting (so a target at the ceiling doesn't flap). */
     val bandHysteresisFt: Double = 200.0,
     /** Reminder cadence while the drone position stays lost. */
     val ownshipLostReminderSec: Double = 120.0,

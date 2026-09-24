@@ -29,17 +29,12 @@ fun startUpdate(a: Activity, s: Settings) {
             .show()
         return
     }
-    val armed = SentryBus.state.value.mode != Mode.OFF
-    val v = Updater.latest(s)?.version
-    if (armed) {
-        AlertDialog.Builder(a, R.style.Sentry_Dialog)
-            .setTitle("Update while armed?")
-            .setMessage("Installing Sentry $v replaces the running app: traffic callouts stop until you tap Open after the install " +
-                "(or until it re-arms itself if \"Re-arm automatically\" is on). Don't update in flight.")
-            .setPositiveButton("Download and install") { _, _ -> Updater.downloadAndInstall(a) }
-            .setNegativeButton("Later", null)
-            .show()
-    } else {
-        Updater.downloadAndInstall(a)
+    // Never while armed (v0.3.3, "never impact DroneSense"): installing replaces the running app and Android's installer
+    // screen would come up over DroneSense. The update waits until the pilot disarms.
+    if (Updater.isArmed(a)) {
+        Updater.deferWhileArmed()
+        android.widget.Toast.makeText(a, "Disarm Sentry first: updates never install while armed", android.widget.Toast.LENGTH_LONG).show()
+        return
     }
+    Updater.downloadAndInstall(a)
 }

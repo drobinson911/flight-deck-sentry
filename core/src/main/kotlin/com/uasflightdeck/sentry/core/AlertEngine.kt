@@ -41,6 +41,8 @@ class AlertEngine(
         val ageSec: Double,
         val sources: Set<String>,
         val groundModeAirborne: Boolean,
+        /** Altitude for the display ceiling: geometric (GPS) when reported, else raw baro; null = unknown. */
+        val altFt: Double? = null,
     )
 
     data class StepResult(
@@ -181,9 +183,10 @@ class AlertEngine(
                 }
             }
 
-            // vertical band (with hysteresis once we're already alerting on it)
-            val bandLimit = cfg.verticalBandFt + if (st.currentSev >= Severity.ADVISORY) cfg.bandHysteresisFt else 0.0
-            val inBand = dv == null || abs(dv) <= bandLimit
+            // Vertical: from the SURFACE up to ceilingAboveFt above the drone (hysteresis once alerting).
+            // Anything below the drone is inside, however far below; unknown altitude is inside (fail wide).
+            val bandLimit = cfg.ceilingAboveFt + if (st.currentSev >= Severity.ADVISORY) cfg.bandHysteresisFt else 0.0
+            val inBand = dv == null || dv <= bandLimit
 
             var sev = Severity.NONE
             var predictive = false
@@ -226,7 +229,8 @@ class AlertEngine(
             ) {
                 val ownVs = ownVerticalFpm() ?: 0.0
                 val dvAtCpa = if (dv != null) dv + ((vs ?: 0.0) - ownVs) * cpa.tSec / 60.0 else null
-                val bandOk = dv == null || min(abs(dv), abs(dvAtCpa!!)) <= bandLimit
+                // inside the volume now OR at the CPA (a climber from below, or a descender from above)
+                val bandOk = dv == null || min(dv, dvAtCpa!!) <= bandLimit
                 if (bandOk) { predictive = true; sev = Severity.WARNING }
             }
             st.currentSev = sev
@@ -244,6 +248,7 @@ class AlertEngine(
                 dvFt = dv, altEstimated = estimated, trend = trend, severity = sev,
                 predictive = predictive, cpa = cpa, zones = inZones.map { it.displayName },
                 ageSec = age, sources = cur.sources, groundModeAirborne = groundAirborne,
+                altFt = if (groundAirborne) null else cur.altGeomFt ?: cur.altBaroFt,
             )
             views += view
 

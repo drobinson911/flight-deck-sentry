@@ -34,6 +34,28 @@ class EngineRulesTest {
 
     private fun sec(n: Int) = T0 + n * 1000L
 
+    /**
+     * Callout cadence in controller mode, as implemented (v0.3.3 README "Callout cadence"): one entry callout,
+     * then the same aircraft at most every 20 s while it stays inside and isn't diverging, one "clear" on exit.
+     */
+    @Test fun cylinderCadenceEntryThenEvery20sThenClearOnce() {
+        val e = AlertEngine()
+        val ctl = { t: Long -> own(t, src = OwnshipSource.CONTROLLER) }
+        val cyl = Cylinder("ops", "ops area", 1.0, 0.0, 3000.0).toZone(O)
+        e.s(sec(0), emptyList(), listOf(cyl), o = ctl(sec(0)))
+        val ev = ArrayList<AlertEvent>()
+        // outside (1.2 nm) for 2 s, then parked inside at 0.8 nm, 300 ft above the controller, for 60 s
+        for (i in 1..2) ev += e.s(sec(i), listOf(tgt(sec(i), 90.0, 1.2, geomFt = 8300.0)), listOf(cyl), o = ctl(sec(i))).events
+        for (i in 3..62) ev += e.s(sec(i), listOf(tgt(sec(i), 90.0, 0.8, geomFt = 8300.0)), listOf(cyl), o = ctl(sec(i))).events
+        // then out to 1.5 nm (beyond the 0.2 nm exit hysteresis)
+        for (i in 63..70) ev += e.s(sec(i), listOf(tgt(sec(i), 90.0, 1.5, geomFt = 8300.0)), listOf(cyl), o = ctl(sec(i))).events
+        val spoken = ev.map { (it.timeMs - T0) / 1000 to it.kind }
+        assertEquals(listOf(3L to EventKind.CYLINDER_ENTRY, 23L to EventKind.PROXIMITY, 43L to EventKind.PROXIMITY, 63L to EventKind.CLEAR), spoken)
+        assertTrue(ev[0].text, ev[0].text.startsWith("Traffic entering ops area, N1234, east"))
+        assertEquals(Severity.CAUTION, ev[1].severity)
+        assertEquals("N1234 clear.", ev[3].text)
+    }
+
     @Test fun ringsAndReannounceEvery20sForCaution() {
         val e = AlertEngine()
         e.s(sec(0), emptyList())                             // acquire
@@ -65,13 +87,51 @@ class EngineRulesTest {
         assertTrue(c.single().text.startsWith("Warning. Traffic"))
     }
 
-    @Test fun verticalBandFilters() {
+    /** v0.3.3: the protected volume is SURFACE up to 2,000 ft above the drone (8,000 MSL here). */
+    @Test fun ceilingAboveTheDroneFilters() {
         val e = AlertEngine()
         e.s(sec(0), emptyList())
         assertTrue(e.s(sec(1), listOf(tgt(sec(1), 0.0, 0.3, geomFt = 10_100.0))).events.isEmpty())
         val r = e.s(sec(2), listOf(tgt(sec(2), 0.0, 0.3, geomFt = 9_900.0)))
         assertEquals(Severity.WARNING, r.events.single().severity)
         assertTrue(r.events.single().text.contains("1,900 above"))
+    }
+
+    /** Owner: "we never want anything flying under us". 3,000 ft BELOW at 0.4 nm warns (the old ±2,000 band was silent). */
+    @Test fun trafficFarBelowTheDroneWarns() {
+        val e = AlertEngine()
+        e.s(sec(0), emptyList())
+        val r = e.s(sec(1), listOf(tgt(sec(1), 90.0, 0.4, geomFt = 5_000.0)))
+        assertEquals(Severity.WARNING, r.events.single().severity)
+        assertTrue(r.events.single().text, r.events.single().text.contains("3,000 below"))
+        // and one right at the surface under the drone too
+        val e2 = AlertEngine(); e2.s(sec(0), emptyList())
+        assertEquals(Severity.WARNING, e2.s(sec(1), listOf(tgt(sec(1), 90.0, 0.4, geomFt = 500.0))).events.single().severity)
+    }
+
+    @Test fun trafficThreeThousandAboveAtPointFourIsSilent() {
+        val e = AlertEngine()
+        e.s(sec(0), emptyList())
+        val r = e.s(sec(1), listOf(tgt(sec(1), 90.0, 0.4, geomFt = 11_000.0)))
+        assertTrue(r.events.isEmpty())
+        assertEquals(Severity.NONE, r.targets.single().severity)
+    }
+
+    @Test fun ceilingIsASetting() {
+        val e = AlertEngine(SentryConfig(ceilingAboveFt = 4000.0))
+        e.s(sec(0), emptyList())
+        assertEquals(Severity.WARNING, e.s(sec(1), listOf(tgt(sec(1), 90.0, 0.4, geomFt = 11_000.0))).events.single().severity)
+    }
+
+    /** The predictive rule uses the same volume: a fast mover 3,000 ft below converging warns early; 3,000 ft above doesn't. */
+    @Test fun predictiveUsesSurfaceToCeiling() {
+        val below = AlertEngine(); below.s(sec(0), emptyList())
+        val ev = below.s(sec(1), listOf(tgt(sec(1), 0.0, 2.8, geomFt = 5_000.0, gs = 200.0, trk = 180.0))).events.single()
+        assertEquals(EventKind.PREDICTIVE, ev.kind); assertEquals(Severity.WARNING, ev.severity)
+        assertTrue(ev.text, ev.text.contains("3,000 below"))
+        val above = AlertEngine(); above.s(sec(0), emptyList())
+        val ev2 = above.s(sec(1), listOf(tgt(sec(1), 0.0, 2.8, geomFt = 11_000.0, gs = 200.0, trk = 180.0))).events
+        assertTrue(ev2.toString(), ev2.none { it.kind == EventKind.PREDICTIVE || it.severity >= Severity.ADVISORY })
     }
 
     @Test fun baroCorrectionIsEstimatedGeomIsNot() {
@@ -231,11 +291,11 @@ class EngineRulesTest {
 
     @Test fun tfrEntryRespectsVerticalBand() {
         // high target crossing the box above 8,500: no entry; lower one: entry once
-        val e = AlertEngine(SentryConfig(verticalBandFt = 500.0))
+        val e = AlertEngine(SentryConfig(ceilingAboveFt = 500.0))
         e.s(sec(0), emptyList(), listOf(box))
         val hi = (1..3).flatMap { i -> e.s(sec(i), listOf(tgt(sec(i), 90.0, 2.0 - i * 0.3, geomFt = 9000.0, hex = "high01")), listOf(box)).events }
         assertTrue(hi.none { it.kind == EventKind.TFR_ENTRY })
-        val e2 = AlertEngine(SentryConfig(verticalBandFt = 500.0))
+        val e2 = AlertEngine(SentryConfig(ceilingAboveFt = 500.0))
         e2.s(sec(0), emptyList(), listOf(box))
         val lo = (1..6).flatMap { i -> e2.s(sec(i), listOf(tgt(sec(i), 90.0, 2.0 - i * 0.2, geomFt = 5000.0, hex = "low001")), listOf(box)).events }
         val entry = lo.filter { it.kind == EventKind.TFR_ENTRY }

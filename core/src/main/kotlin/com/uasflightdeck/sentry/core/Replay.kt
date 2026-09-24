@@ -59,7 +59,7 @@ object DemoReplayFixture {
     /**
      * The drone's DroneSense-style callsign in the replay. The recorded DEMO-1
      * track carries no callsign field; "DEMO-1 Pilot" is added so the replay
-     * exercises selection by the pattern `DEMO-# Pilot`.
+     * drone reads like one typed in DroneSense. Selection is by its synthetic serial.
      */
     const val DRONE_CALLSIGN = "DEMO-1 Pilot"
 
