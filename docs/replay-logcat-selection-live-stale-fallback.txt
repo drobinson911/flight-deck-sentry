@@ -1,0 +1,9 @@
+# Live selector on the emulator against a MOCK DroneSense feed (test callsigns DEMO-2, DEMO-12 Smith; nothing real was flying).
+# Pattern 'DEMO## Smith'. DEMO-12 Smith dropped from the mock feed at 19:45:58 (last position ~19:45:53), restored at 19:46:38.
+--------- beginning of main
+09-23 19:46:08.310 I/Sentry  ( 8345): CALLOUT[live] 19:46:08 CAUTION OWNSHIP_LOST: Drone position lost
+09-23 19:46:08.849 I/Sentry  ( 8345): SPEAK [caution] Drone position lost
+09-23 19:46:23.328 I/Sentry  ( 8345): CALLOUT[live] 19:46:23 CAUTION SELECTION: No drone position for 30 seconds. Protecting this controller.
+09-23 19:46:23.864 I/Sentry  ( 8345): SPEAK [caution] No drone position for 30 seconds. Protecting this controller.
+09-23 19:46:40.333 I/Sentry  ( 8345): CALLOUT[live] 19:46:40 INFO SELECTION: Watching DEMO-12 Smith.
+09-23 19:46:40.620 I/Sentry  ( 8345): SPEAK [info] Watching DEMO-12 Smith.

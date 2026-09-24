@@ -23,8 +23,10 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
 ## Redundancy (stacked, never either/or)
 
 - **Ownship:** Sentry polls our-drones (Flight Deck Air) **and** the DroneSense snapshot
-  every 2 s and picks the freshest matching drone. A manual pin or the controller's GPS is
-  used **only** when neither feed has a position under 15 s old, and the switch is spoken.
+  every 2 s; the `DroneSelector` picks the drone by callsign pattern, then serial (see
+  "Drone selection" below). With no drone selected, Sentry protects cylinders around the
+  controller's own GPS, and every switch is spoken. (v0.1's manual pin was removed in v0.2:
+  the owner chose controller-centred protection as the only fallback.)
   Why both fleet feeds: while DroneSense flies the drone, Flight Deck Air *can't* run
   (MSDK), so the DroneSense snapshot is the feed that will normally carry the drone. This
   was confirmed live on 2026-09-23: DEMO-2 showed up via `/api/live/dronesense` while
@@ -59,9 +61,11 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
   receive time. The only exception is DroneSense: its `lastUpdate` is an absolute time, so
   we trust the controller's clock (NTP/GPS) for it. Traffic ages use `seen_pos` the same
   relative way, so a truck laptop with a wrong clock can't make stale data look fresh.
-- When the controller's GPS is used as ownship, its altitude is Android's WGS-84 ellipsoid
-  height (about 100 ft off MSL in California) plus a configured AGL. The UI labels this
-  position as manual.
+- The controller's elevation is the Settings override, else Android's MSL altitude (API
+  34+), else the raw GPS altitude, which is WGS-84 ellipsoid height (about 100 ft off MSL in
+  California). The Ctrl GPS row says which ("elev set" / "MSL" / "≈ellipsoid").
+- Selection mode and controller-GPS age are recomputed every tick from the selector's
+  result; the fix age is taken from the fix's own timestamp.
 
 ## Alert-engine choices (beyond the spec)
 
@@ -105,6 +109,46 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
 - **The first sighting of an aircraft already inside a zone** is announced as "Traffic
   *inside* TFR …", which is truthful: the entry itself wasn't observed.
 
+## Drone selection and controller protection (v0.2, 2026-09-23)
+
+Owner's decision: "yes on your callsign thing, but for fallback just offer to run the
+protection around the controller, have the user fill out info for the cylinder(s), yes on
+[serial allowlist] also; while typing the [callsign], offer auto-complete with known names."
+
+- **Pattern language.** `#` one digit, `*` any run, case-insensitive; spaces and hyphens are
+  removed from both sides before matching, because DroneSense callsigns are typed by hand
+  ("DEMO-1 Pilot", "DEMO-1 Pilot"). The whole callsign must match, so `DEMO-1` does not
+  catch "DEMO-1 Pilot" (use `DEMO-1*`). `re:` gives a plain regex matched with *find*
+  semantics against the raw callsign, which is what people expect from a regex box.
+- **Tiers, then freshness, then stickiness.** Airborne pattern match > airborne serial match >
+  grounded pattern > grounded serial > controller. A grounded match is still better than the
+  controller: it is our drone, powered on at the pad. Within a tier the freshest `lastUpdate`
+  wins, but a drone already watched is kept while it stays in the best tier, so two drones
+  reporting a second apart don't flip "Now watching" every poll.
+- **A drone that vanishes from the feed is held** until its last position is 15 s old (engine:
+  "Drone position lost"), then 30 s (fallback, spoken). Found on the emulator: the first
+  version dropped it at once because a missing drone was not a candidate; a test now covers it.
+- **Speech ownership.** With a selector, `AlertEngine(externalSelection = true)` stays silent
+  on selection changes (the selector speaks them) and only says lost/regained for the same
+  drone. Changing what is protected still clears track memory silently.
+- **Start-up grace.** "No drone selected" is held for 5 s after arming so it isn't spoken 2 s
+  before the first fleet poll lands; the mode shown on screen is still the true one.
+- **Cylinders replace the rings** in controller mode. Inside any cylinder = caution; the
+  predictive rule is the drone's CPA rule about the controller, gated on the aircraft's
+  altitude now or at CPA being inside a cylinder. Exact circle tests (not the 48-gon).
+  There are no rings under the warning here, so the predictive rule has its own hysteresis
+  (+0.2 nm on the CPA limit and +15 s on the look-ahead while already warning); without it
+  the demo replay went warning / "clear" / warning at 11:53:03–11:53:14.
+- **Honest geometry in the replay.** N388KM passed ~2,700 ft above DEMO-1's launch point.
+  A 1 nm SFC–1,500 ft cylinder is therefore (correctly) silent; the tests use SFC–3,000 ft
+  for the entry case and assert the 1,500 ft case stays silent. The entry callout lands on
+  the 1 s tick after the physical 1 nm crossing (11:53:39.7 → 11:53:41).
+- **Known callsigns.** Live fleet polls feed a persisted history (callsign, serial, last
+  seen); Settings also does one fleet fetch when opened. Replay drones are kept for the
+  session only. `/api/live/drone-ids` returns only `ds:<uuid>` ids, so it isn't used.
+- **Stationary controller.** A fix up to 60 s old is used (GPS and network providers are
+  both requested, freshest wins); the UI shows its real age and accuracy.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with
@@ -139,7 +183,14 @@ Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the rea
 `BuildConfig.DEBUG`**, for scripted demos. It will never disarm Sentry. Release builds
 ignore it.
 
-## Not done / out of scope for v0.1
+## Not done / out of scope
+
+- Controller mode on the real RC Plus: the emulator's `geo fix` did not reach the location
+  service, so the emulator runs used a shell test provider (lat/lon only) plus the elevation
+  override. Real GPS altitude handling and permission prompts need a check on the device.
+- The fleet feed was empty on 2026-09-23 evening, so callsign autocomplete and the live
+  stale/fallback path were exercised against a mock DroneSense feed (test callsigns).
+
 
 - QR scanning for the fleet token: the token is pasted instead (clipboard button).
 - User-drawn geofences: out of scope. Circles and GeoJSON import are supported.
