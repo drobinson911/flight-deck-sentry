@@ -15,6 +15,8 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.graphics.Typeface
 import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -58,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnArm: MaterialButton
     private lateinit var progress: ProgressBar
     private lateinit var updateBanner: TextView
+    private lateinit var plan: ScreenLayout.MainPlan
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         callouts = findViewById(R.id.callouts); logView = findViewById(R.id.log); zones = findViewById(R.id.zones)
         radar = findViewById(R.id.radar); btnArm = findViewById(R.id.btnArm); progress = findViewById(R.id.replayProgress)
         updateBanner = findViewById(R.id.updateBanner)
+        applyPlan(ScreenLayout.mainPlan(resources.configuration.screenWidthDp))
         updateBanner.setOnClickListener { startUpdate(this, settings) }
 
         btnArm.setOnClickListener {
@@ -152,6 +156,81 @@ class MainActivity : AppCompatActivity() {
             }
         }
         i.removeExtra("sentry_action")
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+
+    /**
+     * Reflow for the width we actually have. The RC Plus (1920x1200 at ~320 dpi) gives ~960 dp:
+     * smaller compass with the drone panel under it, ARM on its own row, smaller type. Only
+     * rearranges and resizes: every panel of the wide layout is still on screen.
+     */
+    private fun applyPlan(p: ScreenLayout.MainPlan) {
+        plan = p
+        fun weight(id: Int, w: Float) { (findViewById<View>(id).layoutParams as LinearLayout.LayoutParams).weight = w }
+        weight(R.id.colLeft, p.leftWeight); weight(R.id.colCentre, p.centreWeight); weight(R.id.colRight, p.rightWeight)
+
+        banner.textSize = p.bannerSp; banner.minHeight = dp(p.bannerMinHeightDp)
+        updateBanner.textSize = p.bodySp + 1
+        drone.textSize = p.droneNameSp; droneDetail.textSize = p.bodySp
+        sources.textSize = if (p.compact) p.monoSp else p.monoSp + 1; targets.textSize = p.monoSp; callouts.textSize = p.bodySp
+        zones.textSize = p.bodySp; logView.textSize = p.logSp; logView.maxLines = p.logLines
+        for (id in intArrayOf(R.id.droneLabel, R.id.sourcesLabel, R.id.targetsLabel, R.id.calloutsLabel)) findViewById<TextView>(id).textSize = p.labelSp
+
+        val buttonIds = intArrayOf(R.id.btnArm, R.id.btnTest, R.id.btnPick, R.id.btnSettings)
+        for (id in buttonIds) findViewById<View>(id).layoutParams.height = dp(p.buttonHeightDp)
+
+        fitLines(callouts, findViewById(R.id.calloutsLabel)); fitLines(targets, targetsLabel)
+
+        if (p.droneUnderCompass) {
+            // Drone panel: from the left column to under the compass (and the zones line).
+            val panel = findViewById<View>(R.id.dronePanel)
+            (panel.parent as ViewGroup).removeView(panel)
+            findViewById<LinearLayout>(R.id.colCentre).addView(panel, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) })
+            (findViewById<View>(R.id.sourcesPanel).layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
+        }
+        if (p.buttonsTwoRows) {
+            // ARM gets the full width of its own row; Test / Drone… / Settings share the row below.
+            val row = findViewById<LinearLayout>(R.id.buttonRow)
+            row.removeView(btnArm)
+            findViewById<LinearLayout>(R.id.buttonBox).addView(btnArm, 0,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(p.buttonHeightDp)).apply { bottomMargin = dp(6) })
+            (findViewById<View>(R.id.btnTest).layoutParams as LinearLayout.LayoutParams).marginStart = 0
+            for (id in intArrayOf(R.id.btnTest, R.id.btnPick, R.id.btnSettings))
+                (findViewById<View>(id).layoutParams as LinearLayout.LayoutParams).weight = 1f
+        }
+    }
+
+    /**
+     * A panel shows as many whole lines as fit and ends in "…", instead of the panel edge cutting a
+     * line in half (seen at 320 dpi with five long callouts). Newest items come first, so only the
+     * oldest are cut, and every callout is also in the log and the notification shade.
+     */
+    private fun fitLines(tv: TextView, label: View) {
+        tv.ellipsize = android.text.TextUtils.TruncateAt.END
+        (tv.parent as View).addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val avail = v.height - v.paddingTop - v.paddingBottom - label.height
+            val n = (avail / tv.lineHeight.coerceAtLeast(1)).coerceAtLeast(1)
+            if (tv.maxLines != n) tv.post { tv.maxLines = n }
+        }
+    }
+
+    /** Characters of monospace text that fit on one line of [tv] (0 before the first layout). */
+    private fun monoChars(tv: TextView): Int {
+        val w = tv.width - tv.paddingLeft - tv.paddingRight
+        if (w <= 0) return 0
+        return (w / tv.paint.measureText("0")).toInt()
+    }
+
+    /**
+     * Appends a table row's trailing [tail] on the same line when it fits in [chars], else on its
+     * own indented line: a narrow screen moves text, it never cuts it.
+     */
+    private fun SpannableStringBuilder.tail(usedChars: Int, tail: String, color: Int, chars: Int): SpannableStringBuilder {
+        val t = tail.trim()
+        if (t.isEmpty()) return add("\n")
+        return if (chars == 0 || usedChars + 1 + t.length <= chars) add(" $t\n", color) else add("\n  $t\n", color)
     }
 
     private fun col(id: Int) = ContextCompat.getColor(this, id)
@@ -252,6 +331,7 @@ class MainActivity : AppCompatActivity() {
 
         // ── sources ──
         val sb = SpannableStringBuilder()
+        val sc = monoChars(sources)
         if (st.mode == Mode.REPLAY) sb.add("Replay    ", col(R.color.dim)).add("PLAYING ", col(R.color.replay), true).add("${st.replayTitle}\n", col(R.color.dim))
         for (r in st.sources) {
             val (label, c) = when (r.state) {
@@ -261,7 +341,7 @@ class MainActivity : AppCompatActivity() {
                 HealthMonitor.State.DISABLED -> "OFF    " to R.color.dim
             }
             sb.add(r.name.padEnd(14).take(14), col(R.color.ink)).add(label, col(c), true)
-                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).add(" ${r.detail.take(20)}\n", col(R.color.dim))
+                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).tail(27, r.detail.take(20), col(R.color.dim), sc)
         }
         if (st.mode != Mode.OFF && st.selectionMode != null) {
             val (lbl, c) = when (st.selectionMode) {
@@ -274,7 +354,7 @@ class MainActivity : AppCompatActivity() {
                 SelectionMode.CONTROLLER -> "${st.cylinders.size} cylinder${if (st.cylinders.size == 1) "" else "s"}"
                 else -> "${st.matchCount} match${if (st.matchCount == 1) "" else "es"}"
             }
-            sb.add("Selection".padEnd(14), col(R.color.ink)).add(lbl, col(c), true).add(" $det\n", col(R.color.dim))
+            sb.add("Selection".padEnd(14), col(R.color.ink)).add(lbl, col(c), true).tail(23, det, col(R.color.dim), sc)
             // Controller GPS health, derived at render time from the fix itself
             val f = st.controllerFix
             val fixAge = st.controllerFixAgeSec?.let { it + if (st.mode == Mode.LIVE) (now - st.tickMs) / 1000.0 else 0.0 }
@@ -285,20 +365,22 @@ class MainActivity : AppCompatActivity() {
             }
             val acc = f?.accuracyM?.let { " ±${it.toInt()} m" } ?: ""
             sb.add("Ctrl GPS".padEnd(14), col(R.color.ink)).add(gl, col(gc), true).add(age(fixAge).padEnd(6), col(R.color.ink))
-                .add("$acc ${f?.label?.removePrefix("controller GPS")?.removePrefix(" · ") ?: ""}".take(17) + "\n", col(R.color.dim))
+                .tail(27, "$acc ${f?.label?.removePrefix("controller GPS")?.removePrefix(" · ") ?: ""}".take(17), col(R.color.dim), sc)
         }
         if (st.mode == Mode.OFF) {
-            sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).add("starts when armed", col(R.color.dim))
-            sb.add("\n\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
+            sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).tail(21, "starts when armed", col(R.color.dim), sc)
+            sb.add("\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
         } else {
-            sb.add("Voice".padEnd(14), col(R.color.ink)).add(if (st.voiceOk) "OK     " else "UNAVAILABLE ", col(if (st.voiceOk) R.color.ok else R.color.warning), true)
-                .add(st.voice.replace("com.google.android.tts", "Google").take(20), col(R.color.dim))
+            val vl = if (st.voiceOk) "OK     " else "UNAVAILABLE "
+            sb.add("Voice".padEnd(14), col(R.color.ink)).add(vl, col(if (st.voiceOk) R.color.ok else R.color.warning), true)
+                .tail(14 + vl.length, st.voice.replace("com.google.android.tts", "Google").take(20), col(R.color.dim), sc)
         }
         sources.text = sb
 
         // ── targets ──
         targetsLabel.text = if (st.mode == Mode.OFF) "Targets" else "Targets · ${st.targets.size} within ${settings.trafficRadiusNm.toInt()} nm"
         val tb = SpannableStringBuilder()
+        val tc = monoChars(targets)
         if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) (if (controllerMode) "No controller GPS: nothing computed" else "No ownship: proximity not computed") else "No traffic", col(R.color.dim))
         for (t in st.targets.take(9)) {
             val c = if (t.severity >= Severity.ADVISORY) sevCol(t.severity) else col(R.color.ink)
@@ -310,7 +392,7 @@ class MainActivity : AppCompatActivity() {
                 .add(" ${Geo.cardinalAbbrev(t.bearingDeg).padEnd(2)}", c)
                 .add(String.format(Locale.US, if (t.distNm < 1) " %4.2fnm " else " %4.1fnm ", t.distNm), c)
                 .add(v.padEnd(10), c)
-                .add(" ${tr.padEnd(4)} ${age(t.ageSec)} ${t.sources.joinToString("+") { SRC_ABBR[it] ?: it }}\n", col(R.color.dim))
+                .tail(29, "${tr.padEnd(4)} ${age(t.ageSec)} ${t.sources.joinToString("+") { SRC_ABBR[it] ?: it }}", col(R.color.dim), tc)
             val extra = ArrayList<String>()
             val cpa = t.cpa
             if (t.predictive && cpa != null) extra += "CPA ${Phrasing.displayDistance(cpa.distM / 1852.0)} in ${cpa.tSec.toInt()}s"

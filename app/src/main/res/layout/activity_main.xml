@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
     android:orientation="horizontal"
     android:padding="10dp">
 
-    <!-- Column 1: status, drone, sources, controls -->
+    <!-- Column 1: status, drone, sources, controls. Compact (< 1000 dp, e.g. the RC Plus at 320 dpi):
+         MainActivity moves the drone panel under the compass and puts ARM on its own row (ScreenLayout). -->
     <LinearLayout
+        android:id="@+id/colLeft"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1.15"
@@ -50,6 +53,7 @@
             android:visibility="gone" />
 
         <LinearLayout
+            android:id="@+id/dronePanel"
             style="@style/Sentry.Panel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -61,24 +65,37 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/sourcesPanel"
             style="@style/Sentry.Panel"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_marginTop="8dp"
             android:layout_weight="1"
             android:orientation="vertical">
-            <TextView style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Sources" />
+            <TextView android:id="@+id/sourcesLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Sources" />
             <TextView android:id="@+id/sources" android:layout_width="match_parent" android:layout_height="wrap_content" android:fontFamily="monospace" android:textSize="16sp" android:lineSpacingExtra="4dp" />
         </LinearLayout>
 
+        <!-- Labels never truncate: one line + auto-size (11-20 sp) inside a fixed-height button. -->
         <LinearLayout
+            android:id="@+id/buttonBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
+            android:orientation="vertical">
+        <LinearLayout
+            android:id="@+id/buttonRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
             android:orientation="horizontal">
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnArm"
                 style="@style/Sentry.Button"
+                app:autoSizeTextType="uniform"
+                app:autoSizeMinTextSize="11sp"
+                app:autoSizeMaxTextSize="20sp"
+                app:autoSizeStepGranularity="1sp"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_weight="1.05"
@@ -86,6 +103,10 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnTest"
                 style="@style/Sentry.Button"
+                app:autoSizeTextType="uniform"
+                app:autoSizeMinTextSize="11sp"
+                app:autoSizeMaxTextSize="16sp"
+                app:autoSizeStepGranularity="1sp"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_marginStart="8dp"
@@ -97,6 +118,10 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPick"
                 style="@style/Sentry.Button"
+                app:autoSizeTextType="uniform"
+                app:autoSizeMinTextSize="11sp"
+                app:autoSizeMaxTextSize="16sp"
+                app:autoSizeStepGranularity="1sp"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_marginStart="8dp"
@@ -108,6 +133,10 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSettings"
                 style="@style/Sentry.Button"
+                app:autoSizeTextType="uniform"
+                app:autoSizeMinTextSize="11sp"
+                app:autoSizeMaxTextSize="16sp"
+                app:autoSizeStepGranularity="1sp"
                 android:layout_width="0dp"
                 android:layout_height="76dp"
                 android:layout_marginStart="8dp"
@@ -117,10 +146,12 @@
                 android:textSize="16sp"
                 android:textColor="@color/ink" />
         </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
-    <!-- Column 2: radar -->
+    <!-- Column 2: radar (compact: smaller, with the drone panel under it) -->
     <LinearLayout
+        android:id="@+id/colCentre"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="10dp"
@@ -143,6 +174,7 @@
 
     <!-- Column 3: targets, callouts, log -->
     <LinearLayout
+        android:id="@+id/colRight"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_marginStart="10dp"
@@ -164,7 +196,7 @@
             android:layout_marginTop="8dp"
             android:layout_weight="1.25"
             android:orientation="vertical">
-            <TextView style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last callouts" />
+            <TextView android:id="@+id/calloutsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last callouts" />
             <TextView android:id="@+id/callouts" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:lineSpacingExtra="4dp" />
         </LinearLayout>
         <TextView

@@ -30,8 +30,22 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     private fun c(id: Int) = ContextCompat.getColor(context, id)
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 30f; color = Color.WHITE; isFakeBoldText = true }
-    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 22f; color = Color.GRAY }
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; isFakeBoldText = true }
+    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.GRAY }
+
+    /**
+     * Scale for every drawing constant. The constants were tuned in px on a 240 dpi (density 1.5)
+     * screen with a ~360 dp compass; the RC Plus is density 2.0 with a smaller compass, so scale by
+     * density and shrink (never below 70 %) when the compass is smaller than 300 dp.
+     */
+    private var k = 1f
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        val d = resources.displayMetrics.density
+        val sizeDp = min(w, h) / d
+        k = d / 1.5f * (sizeDp / 300f).coerceIn(0.7f, 1f)
+        text.textSize = 30f * k; small.textSize = 22f * k; ringPaint.strokeWidth = 3f * k
+    }
 
     private fun sevColor(s: Severity) = when (s) {
         Severity.WARNING -> c(R.color.warning)
@@ -47,7 +61,8 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
 
     override fun onDraw(cv: Canvas) {
         val cx = width / 2f; val cy = height / 2f
-        val rMax = min(cx, cy) * 0.88f
+        // Leave room outside the outer ring for the N / S labels so they are never clipped.
+        val rMax = min(min(cx, cy) * 0.88f, min(cx, cy) - text.textSize - 4 * k)
         val cyl = cylinderRadii.filter { it > 0 }.sortedDescending()
         val outerNm = cyl.firstOrNull() ?: rings.first
         fun r(nm: Double) = (nm / outerNm * rMax).toFloat()
@@ -59,18 +74,18 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
             ringPaint.color = c(col); ringPaint.alpha = if (active) 200 else 70
             cv.drawCircle(cx, cy, r(nm), ringPaint)
             small.color = c(col)
-            cv.drawText(fmt(nm), cx + r(nm) * 0.72f + 4, cy - r(nm) * 0.72f, small)
+            cv.drawText(fmt(nm), cx + r(nm) * 0.72f + 4 * k, cy - r(nm) * 0.72f, small)
         }
         // cardinal ticks
         small.color = c(R.color.dim)
-        cv.drawText("N", cx - 8, cy - rMax - 8, text)
-        cv.drawText("S", cx - 8, cy + rMax + 34, small)
-        cv.drawText("E", cx + rMax + 10, cy + 8, small)
-        cv.drawText("W", cx - rMax - 30, cy + 8, small)
+        cv.drawText("N", cx - 8 * k, cy - rMax - 8 * k, text)
+        cv.drawText("S", cx - 8 * k, cy + rMax + small.textSize + 2 * k, small)
+        cv.drawText("E", cx + rMax + 10 * k, cy + 8 * k, small)
+        cv.drawText("W", cx - rMax - 30 * k, cy + 8 * k, small)
 
         // drone (dot) or controller (square)
         fill.color = Color.WHITE
-        if (cyl.isNotEmpty()) cv.drawRect(cx - 10, cy - 10, cx + 10, cy + 10, fill) else cv.drawCircle(cx, cy, 9f, fill)
+        if (cyl.isNotEmpty()) cv.drawRect(cx - 10 * k, cy - 10 * k, cx + 10 * k, cy + 10 * k, fill) else cv.drawCircle(cx, cy, 9f * k, fill)
 
         for (t in targets.sortedBy { it.severity.rank }) {
             val outside = t.distNm > outerNm
@@ -78,8 +93,8 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
             val a = Math.toRadians(t.bearingDeg)
             val x = cx + rr * sin(a).toFloat(); val y = cy - rr * cos(a).toFloat()
             val col = sevColor(t.severity)
-            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = col; style = if (outside) Paint.Style.STROKE else Paint.Style.FILL; strokeWidth = 4f }
-            val size = if (t.severity >= Severity.CAUTION) 20f else if (outside) 9f else 14f
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = col; style = if (outside) Paint.Style.STROKE else Paint.Style.FILL; strokeWidth = 4f * k }
+            val size = k * if (t.severity >= Severity.CAUTION) 20f else if (outside) 9f else 14f
             val path = Path().apply { moveTo(x, y - size); lineTo(x + size, y); lineTo(x, y + size); lineTo(x - size, y); close() }
             cv.drawPath(path, p)
             text.color = col
@@ -89,8 +104,8 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
             if (outside && t.severity < Severity.ADVISORY) continue
             val label = "${t.displayId} $dv"
             val w = text.measureText(label)
-            val lx = if (x + size + 6 + w > width) x - size - 6 - w else x + size + 6
-            cv.drawText(label, lx, y + 10, text)
+            val lx = if (x + size + 6 * k + w > width) x - size - 6 * k - w else x + size + 6 * k
+            cv.drawText(label, lx, y + 10 * k, text)
         }
     }
 

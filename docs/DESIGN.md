@@ -210,6 +210,38 @@ needs to watch forever."
   the update ("Sentry 0.3.0 is available" on 0.3.0). It is now derived from the installed and latest versions, with a
   failed last check appended.
 
+## Fitting the RC Plus screen (v0.3.2, 2026-09-24)
+
+The owner's photo of the real DJI RC Plus showed the main screen's buttons as "AR", "T", "Dr" and "Sett", with the
+left panel cramped. **Root cause:** every layout had been sized on an emulator at 1920×1200 / **240 dpi**
+(1280×800 dp). The RC Plus has a 7" 1920×1200 panel at about **320 dpi** (density 2.0), which leaves about
+**960×600 dp**, a quarter less width. Reproduced on an AVD with the real density (`rc-plus`, screenshot 27:
+"Tes", "Dron", "Settin", and the Sources and callouts panels clipped mid-line).
+
+- **Decide by width in dp, not by device.** `ScreenLayout.compactFor(widthDp)` is true below 1000 dp (unknown width
+  counts as compact, because that plan fits everywhere). It takes `Configuration.screenWidthDp`, so a controller with
+  a larger display size or font setting gets the compact plan as well. `ScreenLayout` is plain Kotlin and has unit tests.
+- **Reflow, don't drop.** In compact mode, the compass column shrinks (weights 1.2 / 0.85 / 1.35, against 1.15 / 0.95 / 1.2
+  in wide mode) and the drone panel moves under the compass. That leaves the left column for the banner, the Sources table and the
+  buttons, and gives the callouts column the extra width. The compass is square and takes the height left over under the
+  drone panel, so a long controller-mode description shrinks the compass rather than being cut. Settings becomes
+  one scrolling column (`ScreenLayout.settingsColumns`).
+- **Labels never truncate.** The buttons have one line, uniform auto-size from 11 to 20 sp, and a fixed height (56 dp in compact
+  mode, 76 dp in wide mode). In compact mode ARM gets its own full-width row, with Test / Drone… / Settings below it. `baselineAligned="false"`
+  on the row: with auto-size the labels can end up different sizes, and at font scale 1.3 baseline alignment pushed
+  two buttons down.
+- **Tables move text instead of cutting it.** The monospace Sources and Targets rows put their trailing detail on
+  an indented second line when it doesn't fit the measured width. The callouts and targets panels show as many
+  whole lines as fit and end in "…" (newest first, so only the oldest callout is shortened; all callouts are also
+  in the log and notifications), instead of the panel edge cutting a line in half.
+- **Radar drawing constants scale with density** (they were raw px tuned at density 1.5) and shrink to 70% at most
+  on a small compass. The "S" label now stays inside the view; before, it was drawn past the bottom edge.
+- **Verified:** `rc-plus` (API 34, 320 dpi) disarmed, replay, live-armed, Settings, picker; the old 240 dpi profile (wide layout
+  unchanged); the **Android 10 / API 29** image at 320 dpi (what the RC Plus runs): the replay produced all callouts, with no
+  crash and nothing under the status bar or the navigation bar. Font scale 1.3 was also checked. **Not verified:** the real controller.
+  Its exact display-size setting is unknown (its truncation was worse than the emulator's), which is why the decision is
+  by measured dp.
+
 ## Voice path
 
 - AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with

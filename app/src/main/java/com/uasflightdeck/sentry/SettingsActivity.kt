@@ -45,7 +45,7 @@ import java.io.File
 import java.util.Locale
 
 /**
- * One scrolling page, two columns on the landscape tablet. Values are saved
+ * One scrolling page: two columns at 1000 dp and wider, one column on the RC Plus (~960 dp). Values are saved
  * on "Save" and when leaving the screen; the service picks them up on its
  * next 1 s tick.
  */
@@ -86,11 +86,19 @@ class SettingsActivity : AppCompatActivity() {
         header.addView(button("Save") { saveAll(); toast("Saved") }.also { (it.layoutParams as? LinearLayout.LayoutParams)?.marginStart = dp(8) })
         root.addView(header)
 
-        val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(10), 0, dp(10), dp(10)) }
+        // Two columns only when each gets ~500 dp; the RC Plus (~960 dp) gets one scrolling column.
+        val twoCols = ScreenLayout.settingsColumns(resources.configuration.screenWidthDp) == 2
+        val cols = LinearLayout(this).apply {
+            orientation = if (twoCols) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; setPadding(dp(10), 0, dp(10), dp(10)) }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val right = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        cols.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        cols.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(10) })
+        if (twoCols) {
+            cols.addView(left, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            cols.addView(right, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(10) })
+        } else {
+            cols.addView(left, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            cols.addView(right, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
         root.addView(ScrollView(this).apply { addView(cols) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
 

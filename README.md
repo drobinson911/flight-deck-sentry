@@ -153,6 +153,10 @@ floor and ceiling in **ft above the controller** (default) or **ft MSL**, and an
 5. Tap **ARM**. Allow notifications and location (the controller's GPS is the fallback protected position). Accept the **battery-optimisation exemption** so Android doesn't throttle Sentry with the screen off.
 6. Tap **Test callout** to set the volume. Then switch to DroneSense: Sentry keeps running and its banners appear over DroneSense.
 
+**Screen:** the RC Plus panel is 1920×1200 px at about 320 dpi, which is about 960×600 dp. Below 1000 dp wide, Sentry
+uses a compact layout: a smaller compass with the drone panel under it, ARM on its own row, smaller type, and
+Settings in one scrolling column. Button labels shrink to fit and never truncate (since 0.3.2).
+
 ## Updating
 
 Sentry updates itself from the public GitHub releases, but **it never installs without your tap**.
@@ -235,7 +239,14 @@ Copy `secrets.properties.example` to `secrets.properties` (gitignored) to bake i
 
 ## Screenshots
 
-`docs/screenshots/`: emulator at 1920×1200 / 240 dpi, which matches the RC Plus panel.
+`docs/screenshots/` 01–26: emulator at 1920×1200 / 240 dpi (AVD `sentry-rc`, 1280×800 dp). **That profile was
+wrong for the RC Plus.** Its 7" 1920×1200 panel runs at about 320 dpi (density 2.0), so an app gets only about
+**960×600 dp**. Screenshots 27–36 use the matching AVD `rc-plus` (1920×1200, `hw.lcd.density=320`):
+27 is 0.3.1 on it, reproducing the truncated buttons from the owner's photo of the real controller ("Tes", "Dron",
+"Settin"; the controller itself showed "AR", "T", "Dr", "Sett"). 28–33 are 0.3.2 on the same AVD: disarmed (28), the
+demo replay with callouts (29), Settings top and bottom in one column (30, 31), the Drone… picker (32), and
+live-armed with DISARM (33). 34 is the old 240 dpi profile after the change (the wide layout is unchanged).
+35 is the Android 10 (API 29) image at 320 dpi, which is what the RC Plus runs. 36 is font scale 1.3.
 `docs/replay-logcat-*.txt`: the `Sentry` logcat from the replays, with every CALLOUT and SPEAK line
 (`-selection-pattern-DEMO-1` = watching by pattern; `-controller-cylinders` = no pattern, cylinders around the
 launch point; `-selection-live-stale-fallback` = the live selector on the emulator against a mock fleet feed).
@@ -254,7 +265,8 @@ core/  pure Kotlin/JVM: Geo, CpaMath, AlertEngine, HealthMonitor, Parsers, Traff
        Update (SemVer, Releases JSON, UpdatePolicy) (+ tests)
 app/   SentryService (FGS, pollers, watchdog, replay), AlertVoice (TTS+tones+ducking),
        Notifier (status + heads-up + update), MainActivity, SettingsActivity, DronePicker, DroneHistory,
-       Updater (GitHub check, download, PackageInstaller session), UpdatePrompt, RadarView, BootReceiver
+       Updater (GitHub check, download, PackageInstaller session), UpdatePrompt, RadarView, BootReceiver,
+       ScreenLayout (compact vs wide layout by width in dp; unit-tested)
 VERSION                        the one version source (0.3.0 -> versionCode 300)
 .github/workflows/android.yml  every push: tests + debug APK artifact
 .github/workflows/release.yml  tag v*: tests + signed release APK attached to the GitHub release
