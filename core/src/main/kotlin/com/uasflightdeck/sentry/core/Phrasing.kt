@@ -59,5 +59,5 @@ object Phrasing {
         return id.filter { it.isLetterOrDigit() }.toCharArray().joinToString(" ")
     }
 
-    fun seconds(t: Double): String = "${t.roundToInt()} seconds"
+    fun seconds(t: Double): String = t.roundToInt().let { if (it == 1) "1 second" else "$it seconds" }
 }

@@ -14,7 +14,16 @@ import kotlin.math.min
  * displayed is "last event wins": [StepResult.targets] is recomputed from live
  * data every step.
  */
-class AlertEngine(var config: SentryConfig = SentryConfig()) {
+class AlertEngine(
+    var config: SentryConfig = SentryConfig(),
+    /**
+     * true = a [DroneSelector] decides what is protected and speaks every
+     * selection change ("Watching …", "Protecting this controller"). The
+     * engine then only speaks position lost / regained for the SAME drone and
+     * resets its tracks silently when the protected thing changes.
+     */
+    val externalSelection: Boolean = false,
+) {
 
     /** What the UI shows for one aircraft, recomputed every step. */
     data class TargetView(
@@ -109,7 +118,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
         // ── zones in play ───────────────────────────────────────────────────
         val own = if (ownFresh) ownship else null
         val watched: List<Zone> = if (own == null) emptyList() else zones.filter { z ->
-            z.kind == ZoneKind.GEOFENCE ||
+            z.kind == ZoneKind.GEOFENCE || z.kind == ZoneKind.CYLINDER ||
                 z.polygons.any { Geo.distanceToPolygonM(own.pos, it) <= Units.nmToM(cfg.tfrRelevanceNm) }
         }
         val groundFt = own?.let { o -> if (o.altMslFt != null && o.altAglFt != null) o.altMslFt - o.altAglFt else null }
@@ -177,7 +186,31 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
             val inBand = dv == null || abs(dv) <= bandLimit
 
             var sev = Severity.NONE
-            if (inBand) {
+            var predictive = false
+            if (own.isController) {
+                // CONTROLLER MODE: the rings are replaced by the user's cylinders.
+                // Inside any cylinder = caution; the predictive rule is the same CPA
+                // test as for a drone, about the cylinder centre (this controller),
+                // and fires when the aircraft's altitude now or at CPA is inside a
+                // cylinder's floor/ceiling (unknown altitude counts as inside).
+                val cyl = watched.filter { it.kind == ZoneKind.CYLINDER }
+                val hyst = st.currentSev >= Severity.CAUTION
+                if (cyl.any { insideCylinder(it, posX, altMsl, groundFt, hyst) }) sev = Severity.CAUTION
+                // Hysteresis: once warning, the CPA may drift out to warning + 0.2 nm and
+                // the look-ahead to +15 s before it stops. There are no rings under the
+                // warning here to hold it, so a noisy derived track would otherwise flap
+                // warning / clear / warning (seen in the demo replay at 11:53:06).
+                val held = st.currentSev >= Severity.WARNING
+                val cpaLimitNm = cfg.warningNm + if (held) cfg.ringHysteresisNm else 0.0
+                val horizon = cfg.cpaHorizonSec + if (held) 15.0 else 0.0
+                if (cpa != null && cpa.tSec > 0 && cpa.tSec <= horizon &&
+                    Units.mToNm(cpa.distM) <= cpaLimitNm && sev < Severity.WARNING
+                ) {
+                    val altAtCpa = altMsl?.let { it + (vs ?: 0.0) * cpa.tSec / 60.0 }
+                    val bandOk = cyl.any { inZoneBand(altMsl, it, groundFt) || inZoneBand(altAtCpa, it, groundFt) }
+                    if (bandOk) { predictive = true; sev = Severity.WARNING }
+                }
+            } else if (inBand) {
                 fun within(level: Severity, ringNm: Double) =
                     distNm <= ringNm + if (st.currentSev >= level) cfg.ringHysteresisNm else 0.0
                 sev = when {
@@ -188,8 +221,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
                 }
             }
             // predictive: CPA inside the warning ring within the horizon
-            var predictive = false
-            if (cpa != null && cpa.tSec > 0 && cpa.tSec <= cfg.cpaHorizonSec &&
+            if (!own.isController && cpa != null && cpa.tSec > 0 && cpa.tSec <= cfg.cpaHorizonSec &&
                 Units.mToNm(cpa.distM) <= cfg.warningNm && sev < Severity.WARNING
             ) {
                 val ownVs = ownVerticalFpm() ?: 0.0
@@ -202,7 +234,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
             // zones
             val inZones = ArrayList<Zone>()
             for (z in watched) {
-                val horiz = z.polygons.any { Geo.pointInPolygon(posX, it) }
+                val horiz = z.containsHoriz(posX)
                 val inside = horiz && inZoneBand(altMsl, z, groundFt)
                 if (inside) inZones += z
             }
@@ -229,7 +261,11 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
                 val zsev = if (sev > Severity.CAUTION) sev else Severity.CAUTION
                 events += AlertEvent(
                     nowMs,
-                    if (z.kind == ZoneKind.TFR) EventKind.TFR_ENTRY else EventKind.GEOFENCE_ENTRY,
+                    when (z.kind) {
+                        ZoneKind.TFR -> EventKind.TFR_ENTRY
+                        ZoneKind.GEOFENCE -> EventKind.GEOFENCE_ENTRY
+                        ZoneKind.CYLINDER -> EventKind.CYLINDER_ENTRY
+                    },
                     zsev,
                     text = "Traffic $verb ${z.displayName}, ${describe(view, false)}.",
                     speech = "Traffic $verb ${z.spokenName}, ${describe(view, true)}.",
@@ -301,6 +337,7 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
     // ── helpers ───────────────────────────────────────────────────────────
 
     private fun handleOwnship(nowMs: Long, o: Ownship?, fresh: Boolean, events: MutableList<AlertEvent>) {
+        if (externalSelection) { handleOwnshipExternal(nowMs, o, fresh, events); return }
         val cfg = config
         if (fresh) {
             o!!
@@ -352,6 +389,44 @@ class AlertEngine(var config: SentryConfig = SentryConfig()) {
             }
             ownPrev = null; ownLast = null
         }
+    }
+
+    /** Selection speech belongs to the DroneSelector; only lost/regained for the same drone is said here. */
+    private fun handleOwnshipExternal(nowMs: Long, o: Ownship?, fresh: Boolean, events: MutableList<AlertEvent>) {
+        if (fresh) {
+            o!!
+            if (ownState == OwnState.LOST && ownLastId == o.id && !o.isController)
+                events += AlertEvent(nowMs, EventKind.OWNSHIP_REGAINED, Severity.INFO, "Drone position regained")
+            if (ownLastId != null && ownLastId != o.id) tracks.clear()
+            ownState = OwnState.OK; ownLastSource = o.source; ownLastId = o.id
+            return
+        }
+        val isDrone = o != null && !o.isController
+        when (ownState) {
+            OwnState.OK -> {
+                if (isDrone) events += AlertEvent(nowMs, EventKind.OWNSHIP_LOST, Severity.CAUTION, "Drone position lost")
+                ownState = OwnState.LOST; ownLostAnnounceMs = nowMs
+            }
+            OwnState.LOST -> if (isDrone && nowMs - ownLostAnnounceMs >= config.ownshipLostReminderSec * 1000) {
+                events += AlertEvent(nowMs, EventKind.OWNSHIP_LOST, Severity.CAUTION, "Drone position still lost")
+                ownLostAnnounceMs = nowMs
+            }
+            OwnState.UNKNOWN -> Unit
+        }
+        if (o != null) { ownLastId = o.id; ownLastSource = o.source }
+        ownPrev = null; ownLast = null
+    }
+
+    /** Inside a cylinder zone, optionally widened by the ring/band hysteresis. Unknown altitude counts as inside. */
+    private fun insideCylinder(z: Zone, p: LatLon, altMsl: Double?, groundFt: Double?, hyst: Boolean): Boolean {
+        val c = z.circle
+        val horiz = if (c != null) Geo.distanceNm(c.center, p) <= c.radiusNm + if (hyst) config.ringHysteresisNm else 0.0
+            else z.containsHoriz(p)
+        if (!horiz) return false
+        if (altMsl == null) return true
+        val pad = if (hyst) config.bandHysteresisFt else 0.0
+        return altMsl >= limitMsl(z.floor, groundFt, isFloor = true) - pad &&
+            altMsl <= limitMsl(z.ceiling, groundFt, isFloor = false) + pad
     }
 
     private fun isManual(s: OwnshipSource) = s == OwnshipSource.MANUAL_PINNED || s == OwnshipSource.DEVICE_GPS

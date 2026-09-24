@@ -26,6 +26,9 @@ class ReplayScenario(
 ) {
     fun ownshipAt(t: Long): Ownship? = latest(ownRows, t) { it.posTimeMs }
 
+    /** The "fleet feed" at time t: the drone, as a DroneSense-style list. */
+    fun dronesAt(t: Long): List<Ownship> = listOfNotNull(ownshipAt(t))
+
     fun trafficAt(t: Long): List<Target> = traffic.mapNotNull { rows -> latest(rows, t) { it.posTimeMs } }
 
     private fun <T> latest(rows: List<T>, t: Long, ts: (T) -> Long): T? {
@@ -54,6 +57,21 @@ object DemoReplayFixture {
     const val CALLSIGN = "N388KM"
 
     /**
+     * The drone's DroneSense-style callsign in the replay. The recorded DEMO-1
+     * track carries no callsign field; "DEMO-1 Pilot" is added so the replay
+     * exercises selection by the pattern `DEMO-# Pilot`.
+     */
+    const val DRONE_CALLSIGN = "DEMO-1 Pilot"
+
+    /** DEMO-1's launch point, used as the simulated controller position in replays. */
+    const val LAUNCH_LAT = 39.4290
+    const val LAUNCH_LON = -120.0344
+    const val LAUNCH_ELEV_FT = 5100.0
+
+    fun launchController(timeMs: Long) = ControllerFix(LAUNCH_LAT, LAUNCH_LON, LAUNCH_ELEV_FT, 5.0, timeMs,
+        label = "replay controller (DEMO-1 launch point)")
+
+    /**
      * @param cloudView true = replay N388KM as the PUBLIC feed saw it: alt_baro
      *   "ground" with no altitude and no track (its transponder was in ground
      *   mode 11:50:42-11:54:42). false = the merged track with the truck's
@@ -66,7 +84,7 @@ object DemoReplayFixture {
         val own = uObj?.get("results").arr().orEmpty().mapNotNull { el ->
             val r = el.obj() ?: return@mapNotNull null
             Ownship(
-                id = "DEMO-1", name = "DEMO-1",
+                id = "DEMO-1", name = DRONE_CALLSIGN, callsign = DRONE_CALLSIGN,
                 lat = r.num("lat") ?: return@mapNotNull null,
                 lon = r.num("lon") ?: return@mapNotNull null,
                 altMslFt = r.num("msl_ft"), altAglFt = r.num("agl_ft"),
@@ -100,7 +118,7 @@ object DemoReplayFixture {
 
         return ReplayScenario(
             title = "Demo encounter: DEMO-1 vs N388KM" + if (cloudView) " (public-feed view)" else "",
-            ownshipId = "DEMO-1", ownshipName = "DEMO-1",
+            ownshipId = "DEMO-1", ownshipName = DRONE_CALLSIGN,
             ownRows = own, traffic = listOf(n), zones = listOf(zone),
             startMs = START_MS, endMs = END_MS,
             clockOffsetMs = PDT_OFFSET_MS, clockZoneLabel = "PDT",

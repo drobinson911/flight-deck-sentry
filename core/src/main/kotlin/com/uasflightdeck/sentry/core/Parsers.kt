@@ -95,14 +95,17 @@ object Parsers {
             val lon = pos.num("lon") ?: continue
             val ageMs = (d.num("_ageMs") ?: 0.0).toLong().coerceAtLeast(0)
             val t = receivedAtMs - ageMs
+            val cs = info.str("callsign")?.trim()?.takeIf { it.isNotBlank() }
             drones += Ownship(
                 id = id,
-                name = info.str("callsign")?.takeIf { it.isNotBlank() } ?: id,
+                name = cs ?: id,
                 lat = lat, lon = lon,
                 altMslFt = pos.num("altMslFt"),
                 altAglFt = pos.num("altAglFt"),
                 posTimeMs = t,
                 source = OwnshipSource.FLEET_FDA,
+                callsign = cs,
+                serial = info.str("serial")?.trim()?.takeIf { it.isNotBlank() },
             )
             // The drone's own AirSense receiver is a THIRD traffic source.
             for (cEl in d["airsense"].arr().orEmpty()) {
@@ -126,8 +129,10 @@ object Parsers {
 
     // ── fleet: /api/live/dronesense  {ts, body:[...]} ─────────────────────
     /**
-     * DroneSense `/v1/drones/with-sensors` elements: latitude, longitude,
-     * altitudeMsl / altitudeAgl (METRES), lastUpdate (unix SECONDS), callSign.
+     * DroneSense `/v1/drones/with-sensors` elements: id (UUID), callSign,
+     * droneName, serial, model, latitude, longitude, altitudeMsl / altitudeAgl
+     * (METRES; AGL is height above TAKEOFF), speed (m/s), heading,
+     * lastUpdate (unix SECONDS).
      * `lastUpdate` is DroneSense's wall clock; the controller is NTP/GPS-synced,
      * so age = now - lastUpdate (clamped at 0). Never reads sensors/rtsp_url.
      */
@@ -143,9 +148,13 @@ object Parsers {
             val id = d.str("id") ?: d.str("serialNumber") ?: continue
             val lu = d.num("lastUpdate")
             val t = if (lu != null) minOf(nowMs, (lu * 1000).toLong()) else nowMs
+            val cs = d.str("callSign")?.trim()?.takeIf { it.isNotBlank() }
             out += Ownship(
                 id = id,
-                name = d.str("callSign")?.takeIf { it.isNotBlank() } ?: d.str("name") ?: id,
+                name = cs ?: d.str("droneName")?.takeIf { it.isNotBlank() } ?: d.str("name") ?: id,
+                callsign = cs,
+                serial = (d.str("serial") ?: d.str("serialNumber"))?.trim()?.takeIf { it.isNotBlank() },
+                speedMs = d.num("speed"),
                 lat = lat, lon = lon,
                 altMslFt = d.num("altitudeMsl")?.let { Units.mToFt(it) },
                 altAglFt = d.num("altitudeAgl")?.let { Units.mToFt(it) },
