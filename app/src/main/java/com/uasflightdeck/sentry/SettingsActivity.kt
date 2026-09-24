@@ -249,7 +249,8 @@ class SettingsActivity : AppCompatActivity() {
         return e
     }
 
-    private fun trimNum(v: Double) = if (v == Math.floor(v) && kotlin.math.abs(v) < 1e7) v.toLong().toString() else v.toString()
+    private fun trimNum(v: Double) = if (v == Math.floor(v) && kotlin.math.abs(v) < 1e7) v.toLong().toString()
+        else String.format(Locale.US, "%.6f", v).trimEnd('0').trimEnd('.')
     private fun EditText.d(): Double? = text.toString().trim().toDoubleOrNull()?.takeIf { it.isFinite() }
 
     private fun LinearLayout.switch(lbl: String, v: Boolean): SwitchCompat {

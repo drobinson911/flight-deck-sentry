@@ -74,12 +74,18 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
             val x = cx + rr * sin(a).toFloat(); val y = cy - rr * cos(a).toFloat()
             val col = sevColor(t.severity)
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = col; style = if (outside) Paint.Style.STROKE else Paint.Style.FILL; strokeWidth = 4f }
-            val size = if (t.severity >= Severity.CAUTION) 20f else 14f
+            val size = if (t.severity >= Severity.CAUTION) 20f else if (outside) 9f else 14f
             val path = Path().apply { moveTo(x, y - size); lineTo(x + size, y); lineTo(x, y + size); lineTo(x - size, y); close() }
             cv.drawPath(path, p)
             text.color = col
             val dv = t.dvFt?.let { (if (it >= 0) "+" else "−") + String.format("%02d", (kotlin.math.abs(it) / 100).toInt()) } ?: "?"
-            cv.drawText("${t.displayId} $dv", x + size + 6, y + 10, text)
+            // Rim markers (outside the outer ring) stay unlabelled unless alerting:
+            // 30 nm of airliners must not bury the one that matters.
+            if (outside && t.severity < Severity.ADVISORY) continue
+            val label = "${t.displayId} $dv"
+            val w = text.measureText(label)
+            val lx = if (x + size + 6 + w > width) x - size - 6 - w else x + size + 6
+            cv.drawText(label, lx, y + 10, text)
         }
     }
 

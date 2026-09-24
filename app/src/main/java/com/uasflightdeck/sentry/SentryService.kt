@@ -96,6 +96,7 @@ class SentryService : Service() {
     @Volatile private var fileZones: List<Zone> = emptyList()
     private var fileZonesStamp = ""
     @Volatile private var discoveredStation: String? = null
+    @Volatile private var stationBaseInUse: String? = null
     @Volatile private var gpsFix: Location? = null
     @Volatile private var lastOwnPos: LatLon? = null
     private var armedAtMs = 0L
@@ -289,7 +290,7 @@ class SentryService : Service() {
         } catch (e: Exception) { err = (err?.let { "$it; " } ?: "") + "dronesense: ${e.message}" }
         if (ok == 0) throw java.io.IOException(err)
         val n = fdaDrones.size + dsDrones.size
-        health.ok("fleet", System.currentTimeMillis(), if (n == 0) "0 drones airborne" else "$n drone${if (n > 1) "s" else ""}" + (err?.let { " (partial: $it)" } ?: ""))
+        health.ok("fleet", System.currentTimeMillis(), (if (n == 0) "0 airborne" else "$n drone${if (n > 1) "s" else ""}") + (err?.let { " (1 of 2 failed)" } ?: ""))
     }
 
     private suspend fun pollStation() {
@@ -305,7 +306,8 @@ class SentryService : Service() {
                 val text = http.get("$b/data/aircraft.json")
                 val now = System.currentTimeMillis()
                 stationTargets = Parsers.parseReadsb(text, now, "station")
-                health.ok("station", now, "${stationTargets.size} ac · ${b.removePrefix("http://")} · ${now - t0} ms")
+                health.ok("station", now, "${stationTargets.size} ac · ${now - t0} ms")
+                if (stationBaseInUse != b) { stationBaseInUse = b; SentryBus.log("Station: using $b") }
                 return
             } catch (e: Exception) { last = e }
         }
@@ -321,7 +323,7 @@ class SentryService : Service() {
         val all = Parsers.parseReadsb(text, now, "cloud")
         val c = lastOwnPos
         cloudTargets = if (c != null) TrafficMerger.within(all, c, settings.trafficRadiusNm) else emptyList()
-        health.ok("cloud", now, "${all.size} nationwide · ${cloudTargets.size} near")
+        health.ok("cloud", now, "${cloudTargets.size} near / ${all.size} US")
     }
 
     private suspend fun pollTfrs() {
@@ -339,7 +341,7 @@ class SentryService : Service() {
         runCatching {
             tfrZones = Parsers.parseTfrs(f.readText())
             // honest age: the cache is as old as the file, not "now"
-            health.ok("tfr", f.lastModified(), "${tfrZones.size} TFRs (disk cache)")
+            health.ok("tfr", f.lastModified(), "${tfrZones.size} (disk cache)")
             SentryBus.log("TFRs: loaded ${tfrZones.size} from disk cache")
         }
     }
@@ -404,7 +406,7 @@ class SentryService : Service() {
         }
         val fresh = best != null && now - best.posTimeMs <= 15_000
         if (!fresh) {
-            manualOwnship(now)?.let { return it to ((if (note.isNotEmpty()) "$note · " else "") + "USING MANUAL POSITION") }
+            manualOwnship(now)?.let { return it to note }
         }
         return best to note
     }

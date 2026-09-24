@@ -144,6 +144,9 @@ class AlertVoice(private val ctx: Context, private val scope: CoroutineScope) : 
 
     private suspend fun speak(ev: AlertEvent) {
         SentryBus.log("SPEAK [${ev.severity.label}] ${ev.speech}")
+        // First callout after arming can beat TTS init by a few hundred ms: wait briefly.
+        var waited = 0
+        while (!ready && waited < 6000) { delay(200); waited += 200 }
         val t = tts
         if (t == null || !ready) { SentryBus.log("Voice: TTS not ready ($status); text only"); return }
         val id = UUID.randomUUID().toString()

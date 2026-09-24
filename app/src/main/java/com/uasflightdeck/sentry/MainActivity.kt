@@ -39,6 +39,9 @@ import java.util.Locale
  * on the last good state.
  */
 class MainActivity : AppCompatActivity() {
+    private companion object {
+        val SRC_ABBR = mapOf("station" to "stn", "cloud" to "cld", "airsense" to "air", "replay" to "rpl")
+    }
     private lateinit var settings: Settings
     private lateinit var banner: TextView
     private lateinit var drone: TextView
@@ -80,6 +83,40 @@ class MainActivity : AppCompatActivity() {
         }
         // Sticky state: if Sentry was armed but the service isn't running (e.g. app updated), re-arm.
         if (settings.armed && SentryBus.state.value.mode == Mode.OFF) SentryService.send(this, SentryService.ACTION_ARM)
+        handleDebugIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDebugIntent(intent)
+    }
+
+    /**
+     * DEBUG builds only, for scripted demos over adb:
+     *   adb shell am start -n com.uasflightdeck.sentry/.MainActivity --es sentry_action replay --ef speed 1
+     * Only replay / test are accepted — never disarm — and release builds ignore it.
+     */
+    private fun handleDebugIntent(i: Intent?) {
+        if (!BuildConfig.DEBUG || i == null) return
+        when (i.getStringExtra("sentry_action")) {
+            "replay" -> SentryService.send(this, SentryService.ACTION_REPLAY) {
+                it.putExtra(SentryService.EXTRA_SPEED, i.getFloatExtra("speed", 1f).toDouble())
+                it.putExtra(SentryService.EXTRA_CLOUD_VIEW, i.getBooleanExtra("cloud_view", false))
+            }
+            "test" -> SentryService.send(this, SentryService.ACTION_TEST)
+            // manual-position fallback for demos: --ef lat .. --ef lon .. --ef alt ..  (no lat = turn it off)
+            "pin" -> if (i.hasExtra("lat")) {
+                settings.manualLat = i.getFloatExtra("lat", 0f).toDouble(); settings.manualLon = i.getFloatExtra("lon", 0f).toDouble()
+                settings.manualAltMslFt = i.getFloatExtra("alt", Float.NaN).toDouble(); settings.manualMode = ManualMode.PINNED
+            } else settings.manualMode = ManualMode.OFF
+            // --es station_url http://10.0.2.2:18080 --ez station true --es filter DEMO-1
+            "set" -> {
+                i.getStringExtra("station_url")?.let { settings.stationUrl = it }
+                if (i.hasExtra("station")) settings.stationEnabled = i.getBooleanExtra("station", false)
+                i.getStringExtra("filter")?.let { settings.droneFilter = it }
+            }
+        }
+        i.removeExtra("sentry_action")
     }
 
     private fun col(id: Int) = ContextCompat.getColor(this, id)
@@ -163,29 +200,38 @@ class MainActivity : AppCompatActivity() {
                 HealthMonitor.State.DISABLED -> "OFF    " to R.color.dim
             }
             sb.add(r.name.padEnd(14).take(14), col(R.color.ink)).add(label, col(c), true)
-                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).add(" ${r.detail.take(46)}\n", col(R.color.dim))
+                .add(age(r.ageSec).padEnd(6), col(R.color.ink)).add(" ${r.detail.take(20)}\n", col(R.color.dim))
         }
-        sb.add("Voice".padEnd(14), col(R.color.ink)).add(if (st.voiceOk) "OK     " else "UNAVAILABLE ", col(if (st.voiceOk) R.color.ok else R.color.warning), true)
-            .add(st.voice, col(R.color.dim))
-        if (st.mode == Mode.OFF) sb.add("\n\nNot armed: sources are not being polled.", col(R.color.dim))
+        if (st.mode == Mode.OFF) {
+            sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).add("starts when armed", col(R.color.dim))
+            sb.add("\n\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
+        } else {
+            sb.add("Voice".padEnd(14), col(R.color.ink)).add(if (st.voiceOk) "OK     " else "UNAVAILABLE ", col(if (st.voiceOk) R.color.ok else R.color.warning), true)
+                .add(st.voice.replace("com.google.android.tts", "Google").take(20), col(R.color.dim))
+        }
         sources.text = sb
 
         // ── targets ──
         targetsLabel.text = if (st.mode == Mode.OFF) "Targets" else "Targets · ${st.targets.size} within ${settings.trafficRadiusNm.toInt()} nm"
         val tb = SpannableStringBuilder()
         if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) "No ownship: proximity not computed" else "No traffic", col(R.color.dim))
-        for (t in st.targets.take(7)) {
+        for (t in st.targets.take(9)) {
             val c = if (t.severity >= Severity.ADVISORY) sevCol(t.severity) else col(R.color.ink)
-            tb.add(t.displayId.padEnd(9).take(9), c, true)
-                .add(" ${Geo.cardinalAbbrev(t.bearingDeg).padEnd(2)} ", c)
-                .add(String.format(Locale.US, "%5.2fnm ", t.distNm), c)
-                .add(Phrasing.displayVertical(t.dvFt, t.altEstimated).padEnd(19).take(19), c)
-                .add(" ${t.trend?.word ?: ""}", col(R.color.dim))
+            val v = t.dvFt?.let { (if (t.altEstimated) "≈" else "") + (if (it >= 0) "+" else "-") +
+                String.format(Locale.US, "%,d", kotlin.math.abs(it).toInt()) + "ft" } ?: "alt ?"
+            val tr = when (t.trend) { null -> ""; com.uasflightdeck.sentry.core.Trend.CONVERGING -> "conv"
+                com.uasflightdeck.sentry.core.Trend.DIVERGING -> "div"; com.uasflightdeck.sentry.core.Trend.PASSING -> "pass" }
+            tb.add(t.displayId.padEnd(8).take(8), c, true)
+                .add(" ${Geo.cardinalAbbrev(t.bearingDeg).padEnd(2)}", c)
+                .add(String.format(Locale.US, if (t.distNm < 1) " %4.2fnm " else " %4.1fnm ", t.distNm), c)
+                .add(v.padEnd(10), c)
+                .add(" ${tr.padEnd(4)} ${age(t.ageSec)} ${t.sources.joinToString("+") { SRC_ABBR[it] ?: it }}\n", col(R.color.dim))
+            val extra = ArrayList<String>()
             val cpa = t.cpa
-            if (t.predictive && cpa != null) tb.add("  CPA ${Phrasing.displayDistance(cpa.distM / 1852.0)} in ${cpa.tSec.toInt()}s", col(R.color.warning))
-            if (t.zones.isNotEmpty()) tb.add("  IN ${t.zones.joinToString()}", col(R.color.caution))
-            if (t.groundModeAirborne) tb.add("  (reports GND at speed)", col(R.color.caution))
-            tb.add("  ${age(t.ageSec)} ${t.sources.joinToString("+")}\n", col(R.color.dim))
+            if (t.predictive && cpa != null) extra += "CPA ${Phrasing.displayDistance(cpa.distM / 1852.0)} in ${cpa.tSec.toInt()}s"
+            if (t.zones.isNotEmpty()) extra += "IN ${t.zones.joinToString()}"
+            if (t.groundModeAirborne) extra += "reports GND at speed: alt unknown"
+            if (extra.isNotEmpty()) tb.add("   ${extra.joinToString(" · ")}\n", if (t.predictive) col(R.color.warning) else col(R.color.caution))
         }
         targets.text = tb
 
