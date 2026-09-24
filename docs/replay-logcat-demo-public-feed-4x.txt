@@ -1,0 +1,19 @@
+--------- beginning of main
+09-23 17:01:54.440 I/Sentry  ( 7324): REPLAY start: Demo encounter: DEMO-1 vs N388KM (public-feed view) at 4.0x
+09-23 17:01:54.445 I/Sentry  ( 7324): CALLOUT[replay] 11:51:50 PDT INFO OWNSHIP_ACQUIRED: Watching DEMO-1
+09-23 17:01:55.575 I/Sentry  ( 7324): SPEAK [info] Replay starting
+09-23 17:01:57.025 I/Sentry  ( 7324): SPEAK [info] Watching U R 3 1
+09-23 17:02:05.736 I/Sentry  ( 7324): CALLOUT[replay] 11:52:35 PDT ADVISORY PROXIMITY: Traffic, N388KM, southwest, 3.0 miles, altitude unknown, converging.
+09-23 17:02:06.075 I/Sentry  ( 7324): SPEAK [advisory] Traffic, N 3 8 8 K M, southwest, 3.0 miles, altitude unknown, converging.
+09-23 17:02:11.258 I/Sentry  ( 7324): CALLOUT[replay] 11:52:57 PDT WARNING PREDICTIVE: Warning. Traffic, N388KM, southwest, 1.9 miles, altitude unknown, converging, closest 2,700 feet in 40 seconds.
+09-23 17:02:13.512 I/Sentry  ( 7324): SPEAK [warning] Warning. Traffic, N 3 8 8 K M, southwest, 1.9 miles, altitude unknown, converging, closest 2,700 feet in 40 seconds.
+09-23 17:02:16.271 I/Sentry  ( 7324): CALLOUT[replay] 11:53:17 PDT WARNING PREDICTIVE: Warning. Traffic, N388KM, southwest, 5,900 feet, altitude unknown, converging, closest 1,200 feet in 18 seconds.
+09-23 17:02:17.779 I/Sentry  ( 7324): CALLOUT[replay] 11:53:23 PDT WARNING TFR_ENTRY: Traffic entering TFR 0/0000, N388KM, southwest, 4,700 feet, altitude unknown, converging.
+09-23 17:02:24.667 I/Sentry  ( 7324): SPEAK [warning] Traffic entering TFR 0 0000, N 3 8 8 K M, southwest, 4,700 feet, altitude unknown, converging.
+09-23 17:02:40.608 I/Sentry  ( 7324): CALLOUT[replay] 11:54:54 PDT INFO CLEAR: N388KM clear, diverging.
+09-23 17:02:40.892 I/Sentry  ( 7324): SPEAK [info] N 3 8 8 K M clear, diverging.
+09-23 17:02:49.881 I/Sentry  ( 7324): REPLAY finished
+09-23 17:02:49.888 I/Sentry  ( 7324): station: Unable to resolve host "--ez": No address associated with hostname (x1)
+09-23 17:02:49.891 I/Sentry  ( 7324): ARMED (live)
+09-23 17:02:49.892 I/Sentry  ( 7324): CALLOUT[live] 17:02:49 INFO SYSTEM: Sentry armed
+09-23 17:02:50.177 I/Sentry  ( 7324): SPEAK [info] Sentry armed

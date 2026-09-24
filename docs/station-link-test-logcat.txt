@@ -1,0 +1,24 @@
+--------- beginning of main
+09-23 17:00:01.669 I/Sentry  ( 7113): Service created
+09-23 17:00:02.208 I/Sentry  ( 7113): TFRs: loaded 106 from disk cache
+09-23 17:00:02.211 I/Sentry  ( 7113): ARMED (live)
+09-23 17:00:02.215 I/Sentry  ( 7113): CALLOUT[live] 17:00:01 INFO SYSTEM: Sentry armed
+09-23 17:00:02.527 I/Sentry  ( 7113): SPEAK [info] Sentry armed
+09-23 17:00:02.715 I/Sentry  ( 7113): Voice: TTS ready (com.google.android.tts)
+09-23 17:00:03.029 I/Sentry  ( 7113): Station: using http://10.0.2.2:18080
+09-23 17:00:03.242 I/Sentry  ( 7113): CALLOUT[live] 17:00:03 CAUTION PROXIMITY: Caution. Traffic, MOCK1, north, 4,900 feet, 100 above, passing.
+09-23 17:00:03.245 I/Sentry  ( 7113): CALLOUT[live] 17:00:03 INFO OWNSHIP_ACQUIRED: Watching manual pin, using manual position
+09-23 17:00:04.569 I/Sentry  ( 7113): SPEAK [caution] Caution. Traffic, M O C K 1, north, 4,900 feet, 100 above, passing.
+09-23 17:00:11.805 I/Sentry  ( 7113): SPEAK [info] Watching manual pin, using manual position
+09-23 17:00:23.236 I/Sentry  ( 7113): CALLOUT[live] 17:00:23 CAUTION PROXIMITY: Caution. Traffic, MOCK1, north, 4,900 feet, 100 above, passing.
+09-23 17:00:23.777 I/Sentry  ( 7113): SPEAK [caution] Caution. Traffic, M O C K 1, north, 4,900 feet, 100 above, passing.
+09-23 17:00:32.020 I/Sentry  ( 7113): station: Failed to connect to /10.0.2.2:18080 (x1)
+09-23 17:00:41.247 I/Sentry  ( 7113): CALLOUT[live] 17:00:41 CAUTION SOURCE_LOST: Station link lost
+09-23 17:00:41.788 I/Sentry  ( 7113): SPEAK [caution] Station link lost
+09-23 17:00:43.249 I/Sentry  ( 7113): CALLOUT[live] 17:00:43 CAUTION PROXIMITY: Caution. Traffic, MOCK1, north, 4,900 feet, 100 above, passing.
+09-23 17:00:43.807 I/Sentry  ( 7113): SPEAK [caution] Caution. Traffic, M O C K 1, north, 4,900 feet, 100 above, passing.
+09-23 17:01:01.258 I/Sentry  ( 7113): CALLOUT[live] 17:01:01 INFO TRACK_LOST: MOCK1 track lost.
+09-23 17:01:01.543 I/Sentry  ( 7113): SPEAK [info] M O C K 1 track lost.
+09-23 17:01:08.265 I/Sentry  ( 7113): CALLOUT[live] 17:01:08 CAUTION PROXIMITY: Caution. Traffic, MOCK1, north, 4,900 feet, 100 above, passing.
+09-23 17:01:08.268 I/Sentry  ( 7113): CALLOUT[live] 17:01:08 INFO SOURCE_REGAINED: Station link regained
+09-23 17:01:08.802 I/Sentry  ( 7113): SPEAK [caution] Caution. Traffic, M O C K 1, north, 4,900 feet, 100 above, passing.
