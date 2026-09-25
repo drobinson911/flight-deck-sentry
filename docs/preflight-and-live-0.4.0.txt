@@ -1,0 +1,37 @@
+# 0.4.0 pre-flight check, then armed live (run D)
+--------- beginning of main
+--------- beginning of system
+20:24:40.940 Service created
+20:24:40.955 Pre-flight: running
+20:24:42.993 Pre-flight OK   Internet: online
+20:24:42.993 Pre-flight OK   Fleet token: accepted
+20:24:42.993 Pre-flight OK   Drone feed: no drones in feed
+20:24:42.993 Pre-flight FAIL Bound aircraft: 1581F7K3C251F00C9B34 not in the feed -> Power the aircraft and let DroneSense connect; it appears within seconds
+20:24:42.993 Pre-flight FAIL Controller GPS: no fix -> Allow location for Sentry and wait for a fix outdoors
+20:24:42.993 Pre-flight OK   Traffic feed: cloud ADS-B OK
+20:24:42.993 Pre-flight OK   TFR data: 106 TFRs
+20:24:42.993 Pre-flight OK   Notifications: on, heads-up allowed
+20:24:42.994 Pre-flight OK   Battery optimisation: exempt
+20:24:42.994 Pre-flight OK   Sound: played the warning sound · alarm 7/7, notification 7/7
+20:24:42.994 Pre-flight FAIL Vibration: not available on this controller (skipped)
+20:24:45.600 ALERT[preflight] 20:24:45 CAUTION PREFLIGHT/OTHER sound=preflight/full banner=POPUP: Pre-flight: 2 to fix: Bound aircraft, Controller GPS
+20:24:45.653 SOUND preflight/full level_default
+20:25:00.961 Service destroyed (mode=OFF)
+20:25:16.477 Service created
+20:25:16.490 ARMED (live)
+20:25:16.498 ALERT[live] 20:25:16 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+20:25:16.500 Selection: bound to 1581F7K3C251F00C9B34
+20:25:16.512 Controller GPS listening
+20:25:21.495 ALERT[live] 20:25:21 INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+20:25:31.510 ALERT[live] 20:25:31 CAUTION CONTROLLER_GPS_LOST/OTHER sound=- banner=NONE: Controller GPS unavailable. Nothing protected.
+20:26:16.608 ALERT[live] 20:26:16 CAUTION SOURCE_LOST/OTHER sound=- banner=NONE: Drone feed lost
+20:26:24.341 ALERT[live] 20:26:24 CAUTION SOURCE_LOST/OTHER sound=- banner=NONE: Cloud traffic lost
+20:26:24.687 cloud: timeout (x1)
+20:26:25.377 ALERT[live] 20:26:25 INFO SOURCE_REGAINED/OTHER sound=- banner=NONE: Drone feed regained
+20:26:36.901 ALERT[live] 20:26:34 CAUTION TRAFFIC_STALE/OTHER sound=- banner=NONE: Traffic data stale
+20:26:39.997 ALERT[live] 20:26:39 INFO TRAFFIC_RESTORED/OTHER sound=- banner=NONE: Traffic data restored
+20:26:39.997 ALERT[live] 20:26:39 INFO SOURCE_REGAINED/OTHER sound=- banner=NONE: Cloud traffic regained
+20:27:15.151 ALERT[live] 20:27:15 CAUTION SOURCE_LOST/OTHER sound=- banner=NONE: Drone feed lost
+20:27:16.153 ALERT[live] 20:27:16 INFO SOURCE_REGAINED/OTHER sound=- banner=NONE: Drone feed regained
+20:32:51.062 DISARMED
+20:32:55.071 Service destroyed (mode=OFF)

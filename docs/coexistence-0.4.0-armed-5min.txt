@@ -1,0 +1,42 @@
+Flight Deck Sentry 0.4.0, AVD rc-plus-29 (Android 10, 1920x1200 @ 400 dpi), armed LIVE (real worker, pinned serial not in the feed:
+low-power polling, fleet + cloud every 5 s), Android Settings app in front for 5 minutes. The process had drawn Sentry's UI earlier.
+mResumedActivity sampled every 10 s; CPU = utime+stime of the Sentry process (CLK_TCK 100) over the window; PSS from dumpsys meminfo.
+0.3.5 for comparison (2 s / 5 s polling): 3.3-3.4 % of one core, PSS 103 MB service-only / 138 MB with the UI drawn.
+
+pid 6479; start 20:28:51
+1 20:29:01     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+2 20:29:11     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+3 20:29:21     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+4 20:29:31     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+5 20:29:41     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+6 20:29:51     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+7 20:30:01     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+8 20:30:11     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+9 20:30:21     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+10 20:30:31     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+11 20:30:41     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+12 20:30:51     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+13 20:31:01     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+14 20:31:11     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+15 20:31:21     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+16 20:31:31     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+17 20:31:41     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+18 20:31:51     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+19 20:32:01     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+20 20:32:11     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+21 20:32:21     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+22 20:32:31     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+23 20:32:41     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+24 20:32:51     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+25 20:33:02     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+26 20:33:12     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+27 20:33:22     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+28 20:33:32     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+29 20:33:42     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+30 20:33:52     mResumedActivity: ActivityRecord{7a4af22 u0 com.android.settings/.homepage.SettingsHomepageActivity t40}
+CPU 1.60 % of one core over 301 s (482 ticks)
+Sentry resumed in 0 of 30 samples
+        TOTAL   124437   116476      644        0    92309    58415    33893
+               TOTAL:   124437      TOTAL SWAP (KB):        0
+        TOTAL   116271   108284      660        0    89521    26734    62786
+pid still 6479

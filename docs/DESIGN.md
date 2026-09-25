@@ -1,502 +1,178 @@
-# Flight Deck Sentry: design decisions
+# Flight Deck Sentry: design (0.4.0)
 
-Written 2026-09-23 alongside v0.1.0. Each entry gives the decision, then the reason for it.
+0.4.0 implements the plan agreed with the owner on 2026-09-24, with the coordinator's changes from the fleet
+simulation of 86 real flights (2026-09-23). This file records how it works and why, and every place where the plan
+had to be interpreted. The README is the pilot-facing description.
+
+## Purpose and limits
+
+Sentry is a background companion on the DJI RC Plus while DroneSense flies. It **only notifies** (sound + vibration +
+heads-up banner); the pilot then looks at AirSense / ForeFlight and acts. No map, no voice. It must never impact
+DroneSense: it never takes the foreground while armed, ducks other audio only for the length of a sound, never
+prompts while armed, polls at bounded rates, and the updater waits for disarm.
 
 ## Architecture
 
-- **Two modules.** `:core` is pure Kotlin/JVM with no Android or DJI dependencies. It holds
-  geodesy, CPA, the alert engine, source health, every feed parser, and the replay loader.
-  `:app` is the Android shell. Because the logic that decides what the pilot hears is in
-  `:core`, it is unit-tested on the JVM against the real demo data. `testDebugUnitTest`
-  in `:app` depends on `:core:test`, so the documented gate cannot pass without running the
-  engine tests.
-- **No DJI SDK.** DroneSense owns the MSDK link, and only one app can hold it. The drone's
-  position comes from the fleet network feeds.
-- **Views, not Compose.** This keeps the build small and fast on the controller. The UI is
-  a handful of text panels plus a Canvas radar.
-- **SharedPreferences, not DataStore.** Settings are synchronous and tiny, and the service
-  re-reads them every tick, so a change applies within 1 s with no restart or plumbing.
-- **AGP 8.5.2 / Kotlin 1.9.24** are the same pins as flightdeck-air. The Gradle wrapper uses
-  8.14.3, which is already in the local Gradle cache. `buildToolsVersion 35.0.0` is used
-  because 34.0.0 isn't installed here.
+```
+feeds (pollers, 1/2/5 s + TFR 10 min)  ──►  SentryService tick (1 s, live or replay clock)
+                                              │
+DroneSelector (pinned serial, else controller)│
+AlertEngine.step ──► TargetViews + AlertEvents (tier, phase, cue, popup, banner text, crossedAt, S)
+HealthMonitor / InternetMonitor ──► screen-only / housekeeping events
+MuteBook.step (expire, give way)             │
+OutputPlanner.plan ──► per event: sound level + cue (after mutes, style, one sound per tick), banner action
+                                              │
+SoundPlayer (sound + vibration)   Notifier (traffic / housekeeping / status notifications, timers)   SentryBus (UI)
+```
 
-## Redundancy (stacked, never either/or)
+Everything that decides *whether and how* the pilot is alerted is pure Kotlin in `core/` and unit-tested on the JVM:
+`Prediction`, `AlertEngine`, `Cadence`, `Banner`, `Outputs` (`SoundLevel`, `SoundChoice`, `OutputPlanner`,
+`Playback`), `Mutes`, `Connectivity`, `PollRates`, `Preflight`, `AlertLatency`. The app only executes the plan.
 
-- **Ownship:** Sentry polls our-drones (Flight Deck Air) **and** the DroneSense snapshot
-  every 2 s; the `DroneSelector` watches this controller's pinned aircraft (by serial) and
-  nothing else (v0.3.3, see below). When it is not in the feed, or none is pinned, Sentry protects
-  cylinders around the controller's own GPS, and every switch is spoken.
-  Why both fleet feeds: while DroneSense flies the drone, Flight Deck Air *can't* run
-  (MSDK), so the DroneSense snapshot is the feed that will normally carry the drone. This
-  was confirmed live on 2026-09-23: DEMO-2 showed up via `/api/live/dronesense` while
-  our-drones was empty.
-- **Traffic:** the truck station, cloud ADS-B, and the drone's own AirSense contacts
-  (when Flight Deck Air relays them) are merged per hex. The newest position wins, and
-  identity fields are filled in from whichever feed has them.
-- **Station address:** a typed URL **and** Overwatch's UDP beacon (41120). Each candidate
-  is tried in turn every poll.
-- **Pollers:** each has its own coroutine, exponential backoff (capped: station 10 s, fleet
-  15 s, cloud 30 s), and a heartbeat. A **watchdog** runs every 5 s and relaunches any
-  poller whose heartbeat is older than interval + max backoff + 20 s. It also restarts the
-  1 s tick loop if it stalls for more than 10 s, and re-acquires the wake lock.
-- **Process:** foreground service (dataSync|location) with a partial wake lock and
-  `START_STICKY`; after a sticky restart it re-arms from the saved "armed" flag. Re-arming
-  after boot or an app update is opt-in. Sentry asks for a battery-optimisation exemption
-  when it is first armed.
-- **Voice (v0.3.5):** two voices, stacked: the device's TTS engine when it has one and it works, and Sentry's
-  own bundled clip voice, always loaded. The DJI RC Plus has no TTS engine at all. A TTS failure on a callout
-  switches to the bundled voice for that same callout, and TTS is retried 5 minutes later. Tones and heads-up
-  banners work whichever voice is speaking. See "Sentry's own voice" below.
+## Prediction (`core/Prediction.kt`)
 
-## Truthfulness (the UI never shows a state that isn't true)
+Straight line, relative frame: `rel` = aircraft − drone (local east/north, m), `vRel` = aircraft − drone velocity.
+tCPA = −(rel·vRel)/|vRel|² (0 when not converging), miss = |rel + vRel·tCPA|, vertical at CPA = dv + (vs_aircraft −
+vs_drone)·tCPA. Aircraft velocity: reported track + ground speed, else derived from the last two positions (N388KM's
+public feed had no track). Aircraft vertical rate: `baro_rate`, else `geom_rate`, else **level** (a rate derived from
+jittery altitudes would fake crossings). Drone velocity and vertical rate: from its last two fixes; < 1 kt =
+stationary (GPS jitter must not make parked traffic "converge", tested).
 
-- The engine's `StepResult.targets` is recomputed from live inputs every second. The UI
-  renders only that, never "the last alert".
-- The UI re-renders every second. If the service's tick timestamp is more than 3 s old,
-  the banner turns red ("SENTRY NOT RUNNING — engine stalled") instead of freezing on a
-  green state.
-- Each source row shows its state, calculated at render time from its last *successful*
-  fetch, next to its age in seconds. A disk-cached TFR set reports the file's age, not
-  "now".
-- Ownship age comes from the feed's own relative age field (`_ageMs`) subtracted from our
-  receive time. The only exception is DroneSense: its `lastUpdate` is an absolute time, so
-  we trust the controller's clock (NTP/GPS) for it. Traffic ages use `seen_pos` the same
-  relative way, so a truck laptop with a wrong clock can't make stale data look fresh.
-- The controller's elevation is the Settings override, else Android's MSL altitude (API
-  34+), else the raw GPS altitude, which is WGS-84 ellipsoid height (about 100 ft off MSL in
-  California). The Ctrl GPS row says which ("elev set" / "MSL" / "≈ellipsoid").
-- Selection mode and controller-GPS age are recomputed every tick from the selector's
-  result; the fix age is taken from the fix's own timestamp.
+Corridor widening, `threshold + distance × tan(angle)`, is implemented and tested but **defaults to 0°** (fleet
+simulation: widening made 180/90 noisier, 150 false alarms vs 98).
 
-## Alert-engine choices (beyond the spec)
+**Crossing test (COLLISION RISK, second arm):** solve |rel + vRel·t| ≤ 0.5 nm for the window [t1, t2] ∩ [0, 60 s];
+the altitude crossing time tc = −dv / vs_rel must fall inside it, with tc ≥ 0 (moving apart vertically never counts).
+Both vertical rates are used, so a drone climbing through level traffic counts too (tested).
 
-- **Treat `"ground"` at 50 kt or more as airborne with unknown altitude.** N388KM's
-  transponder was in ground mode from 11:50:42 to 11:54:42, and the public feed showed
-  `alt_baro:"ground"` at 160 kt for the entire pass. A naive "drop ground traffic" filter
-  would have stayed **silent**. A dedicated test replays that view, and a mutation check
-  confirmed the test fails without this rule.
-- **Dead reckoning.** A target is projected forward from its last report along its
-  velocity, for at most 10 s. This compensates for ADS-B latency and puts the TFR entry at
-  11:53:23 instead of the next report at 11:53:27.
-- **Velocity from history.** When `track` is missing (it was null for N388KM throughout),
-  velocity is taken from the last two positions (0.5 to 30 s apart). The drone's own
-  velocity also comes from its history and is used in the relative motion for CPA.
-- **Hysteresis.** A ring has to be exceeded by 0.2 nm, and the ceiling above the drone by 200 ft,
-  before the severity drops. This stops a target on a ring edge from flapping.
-- **De-escalation is silent.** The re-announce interval then applies at the new level.
-  Targets that are **diverging** aren't re-announced; they get their "clear" when they
-  leave the rings. This keeps a departing aircraft from generating a string of callouts.
-- **Combined callouts.** When a TFR entry and a proximity alert for the same aircraft fire
-  on the same tick, they become one callout. The TFR sentence already carries direction,
-  distance, vertical and trend, and takes the higher severity (at least caution).
-- **"On the ground" instead of "track lost".** An announced target that switches to
-  ground at low speed gets "X on the ground." This was found during live testing, when a
-  landing DAL756 at SFO was reported as "track lost". A target that simply disappears gets
-  "X track lost.", said once.
-- **Changing ownship resets tracks silently.** Switching drones clears all per-target
-  memory (every range was relative to the old drone) and says "Now watching …". Also found
-  live, when the manual pin handed over to DEMO-2.
-- **TFR altitudes.** MSL limits are used as given. An AGL floor of 0 means the surface.
-  Other AGL limits use the ground under the drone (MSL − AGL); without that, the limit
-  fails wide. An unknown ceiling ("see NOTAM", and NDA TFRs) is capped at 18,000 ft MSL so
-  airliners at FL350 don't set it off. A TFR whose edge is more than 10 nm from the drone
-  isn't watched.
-- **"Miles" means nautical miles**, the aviation convention. The rings are in nm.
-- **Remote ID tracks (`src:"rid"`) from the station are dropped.** Sentry is about crewed
-  aircraft, and the RID feed would include our own drone.
-- **Callsigns are spelled out for TTS** ("N 3 8 8 K M"). Otherwise the engine reads "three
-  hundred eighty-eight", which is harder to catch over noise. Names with spaces are left
-  alone.
-- **The first sighting of an aircraft already inside a zone** is announced as "Traffic
-  *inside* TFR …", which is truthful: the entry itself wasn't observed.
+## Tiers (`AlertEngine`)
 
-## Drone selection and controller protection (v0.2, 2026-09-23)
+Order, lowest to highest: advisory < **TRACK** < caution < WARNING < COLLISION RISK. *Interpretation:* the plan lists
+TRACK, WARNING, COLLISION RISK as the prediction tiers and advisory / caution as ring tiers without ordering them
+against TRACK. TRACK sits above advisory (a predicted conflict outranks being 3 nm away, and the ring entry under a
+TRACK ALERT is then silent, as the cadence table intends) and below caution (an aircraft on a TRACK ALERT that then
+gets inside 1 nm still escalates and sounds).
 
-> **Superseded in v0.3.3:** the callsign pattern, serial allowlist, picker and "protect this controller" switch
-> were removed. Selection is now the pinned serial, else the controller (see "Bound to one aircraft" below).
-> The controller cylinders, the drop-out hold and the controller-GPS rules below still apply.
+- Volume: surface … ceiling above the drone (+200 ft once alerting). TRACK and predicted WARNING use the vertical
+  offset **at CPA**; the rings use the offset now. Unknown altitude is inside everywhere, including COLLISION RISK's
+  "≤ 300 ft" (fail wide; the public-feed demo view never reaches it because its miss is 1,200 ft).
+- Holds: a predicted tier stays up while its prediction has been out of the corridor for ≤ 5 s, and never while
+  diverging. Hysteresis once a tier is up: rings +0.2 nm, predicted miss +0.2 nm, prediction time +10 s. The
+  hysteresis was added after the first demo run flapped TRACK / clear / TRACK at 11:52:14–39 (derived velocity
+  noise); with it the TRACK ALERT is one sound then 30 s banner updates.
+- Anti-flap: stepping back up to a tier already alerted this pass within 15 s is a silent update (the COLLISION RISK
+  tone keeps its 3 s rhythm). Seen in the crossing replay at 11:53:04–06.
+- "No longer a factor": a TRACK ALERT that lapses (still converging) becomes a silent banner update, even if the
+  aircraft is inside a ring.
+- Zone entry: only zones containing the drone or within `zoneAlertNm` (2 nm) of it, and only for aircraft inside the
+  volume (TFRs / geofences; cylinders have their own band). If the aircraft is already at WARNING or above, or an
+  escalation fires in the same tick, the zone entry is logged only: it must not interrupt the alarm cadence.
+- Controller mode (no bound aircraft): cylinders replace the rings (inside = CAUTION); TRACK / WARNING predictions
+  about the controller with the cylinders' bands; no COLLISION RISK.
+- Closeness score S = √((h/2000)² + (v/500)²), worst per pass, on every traffic event (fleet-simulation scoring).
 
-Owner's decision: "yes on your callsign thing, but for fallback just offer to run the
-protection around the controller, have the user fill out info for the cylinder(s), yes on
-[serial allowlist] also; while typing the [callsign], offer auto-complete with known names."
+## Cadence (`Cadence`, engine)
 
-- **Pattern language.** `#` one digit, `*` any run, case-insensitive; spaces and hyphens are
-  removed from both sides before matching, because DroneSense callsigns are typed by hand
-  ("DEMO-1 Pilot", "DEMO-1 Pilot"). The whole callsign must match, so `DEMO-1` does not
-  catch "DEMO-1 Pilot" (use `DEMO-1*`). `re:` gives a plain regex matched with *find*
-  semantics against the raw callsign, which is what people expect from a regex box.
-- **Tiers, then freshness, then stickiness.** Airborne pattern match > airborne serial match >
-  grounded pattern > grounded serial > controller. A grounded match is still better than the
-  controller: it is our drone, powered on at the pad. Within a tier the freshest `lastUpdate`
-  wins, but a drone already watched is kept while it stays in the best tier, so two drones
-  reporting a second apart don't flip "Now watching" every poll.
-- **A drone that vanishes from the feed is held** until its last position is 15 s old (engine:
-  "Drone position lost"), then 30 s (fallback, spoken). Found on the emulator: the first
-  version dropped it at once because a missing drone was not a candidate; a test now covers it.
-- **Speech ownership.** With a selector, `AlertEngine(externalSelection = true)` stays silent
-  on selection changes (the selector speaks them) and only says lost/regained for the same
-  drone. Changing what is protected still clears track memory silently.
-- **Start-up grace.** "No drone selected" is held for 5 s after arming so it isn't spoken 2 s
-  before the first fleet poll lands; the mode shown on screen is still the true one.
-- **Cylinders replace the rings** in controller mode. Inside any cylinder = caution; the
-  predictive rule is the drone's CPA rule about the controller, gated on the aircraft's
-  altitude now or at CPA being inside a cylinder. Exact circle tests (not the 48-gon).
-  There are no rings under the warning here, so the predictive rule has its own hysteresis
-  (+0.2 nm on the CPA limit and +15 s on the look-ahead while already warning); without it
-  the demo replay went warning / "clear" / warning at 11:53:03–11:53:14.
-- **Honest geometry in the replay.** N388KM passed ~2,700 ft above DEMO-1's launch point.
-  A 1 nm SFC–1,500 ft cylinder is therefore (correctly) silent; the tests use SFC–3,000 ft
-  for the entry case and assert the 1,500 ft case stays silent. The entry callout lands on
-  the 1 s tick after the physical 1 nm crossing (11:53:39.7 → 11:53:41).
-- **Known callsigns.** Live fleet polls feed a persisted history (callsign, serial, last
-  seen); Settings also does one fleet fetch when opened. Replay drones are kept for the
-  session only. `/api/live/drone-ids` returns only `ds:<uuid>` ids, so it isn't used.
-- **Stationary controller.** A fix up to 60 s old is used (GPS and network providers are
-  both requested, freshest wins); the UI shows its real age and accuracy.
+Per aircraft, repeats only while converging (range or tCPA decreasing; `tCPA > 0` and the range rate is not
+opening), except the COLLISION RISK tone, which runs until the tier drops. WARNING bands 20 / 12 / 6 s with a 6 s floor;
+caution 20 s (short sound); TRACK and advisory 30 s banner updates. Quiet doubles all intervals except the collision
+tone. PASSING fires once when the range opens after the aircraft was seen converging; it sounds only after a WARNING
+or COLLISION RISK. CLEAR is silent and removes the banner. After a pass, only a real re-convergence (range rate
+closing) re-triggers.
 
-## Pinned serial, self-update, release signing (v0.3, 2026-09-24)
+## Output (`OutputPlanner`, `SoundPlayer`, `Notifier`)
 
-> **Selection part superseded in v0.3.3:** the pin is no longer a top tier above other rules; it is the only drone
-> that can be watched. The self-update and signing parts below still apply, plus "never while armed" (v0.3.3).
+- **One sound per tick**, the most urgent (collision > warning > zone > caution > track > passing > advisory >
+  housekeeping). Every banner still posts.
+- Mutes apply to REPEAT / UPDATE / PASSING sounds only. Escalations, zone entries and COLLISION RISK always sound
+  and drop per-aircraft mutes. *Interpretation:* "all mutes return instantly on escalation" is applied to Quiet
+  5 min as "an escalation of any aircraft sounds through Quiet" without ending Quiet, so Quiet still silences the
+  repeats of everything else in busy airspace.
+- Advisory is banner-only unless the style is **Loud** (fleet simulation: 87 of 98 false alarms were the advisory
+  ring alone). Caution is banner-only in Quiet.
+- **Sounds** by file name from the device library (`MediaStore.Audio.Media.INTERNAL_CONTENT_URI`, `DISPLAY_NAME`):
+  URIs differ per device, names are stable. The defaults were chosen on the API 29 image for distinctness and a single
+  onset each (Alarm_Beep_03 has two beeps, so the warning default is Oxygen). Resolution chain: picked → level
+  default → default alarm (warning / collision) → default notification → `ToneGenerator` beep. Never silence.
+- FULL cue: the sound, capped at 2.5 s. SHORT cue (repeats): 60 % volume, cut at 0.7 s.
+- **No double-play:** all channels are created with no sound and no vibration (the 0.3.x "alerts" channel, which
+  vibrated, is deleted). Proven on the emulator's audio capture: 60 sounds logged, 60 sound onsets in the WAV.
 
-Owner: "Let's do serial number also, type it once and it knows what drone that controller
-needs to watch forever."
+### Banners: what Android 10 actually does
 
-- **The pin is its own top tier**: pinned airborne > pinned on the pad > airborne pattern >
-  airborne serial > grounded pattern > grounded serial > controller. A pinned airframe that is
-  still on the pad beats an airborne pattern match: the owner said it is *the* drone for
-  this controller, and a pad-sitting M4T that is about to launch is the one to watch. When the
-  pattern matches a different drone, "Pinned aircraft wins" is spoken once per episode (it
-  resets when the pin stops being watched), and the reason stays in the drone panel's note.
-- **"Watching" or "Now watching"**: "Watching …, this controller's aircraft" when the pilot has
-  heard nothing yet. That covers start-up, including the pin arriving while the 5 s "No drone
-  selected" grace is still holding its line, which is then dropped. "Now watching …" when it
-  replaces something that was already spoken (another drone, or the controller). Switching from
-  callsign mode to pinned mode on the **same** airframe (the pilot pins the drone being watched)
-  says nothing: nothing changed about what is protected.
-- **"Forever" is re-evaluation, not a timer.** The selector re-ranks the live list every second,
-  so a pinned airframe that shows up an hour later is taken at once (a test covers 3,600 s).
-  The note "Pinned … not in the feed; still looking" is visible the whole time.
-- **Serials are compared trimmed and case-insensitively.** The feed's `serial` is a free
-  string, and the pilot may type it in lower case.
-- **Persistence: SharedPreferences, not DataStore**, like every other setting (see Architecture).
-  The pin is kept until the pilot clears it. The replay drone got a clearly **synthetic** serial
-  (`DemoReplayFixture.DRONE_SERIAL`, not DEMO-1's real one) so the pin can be exercised in replay.
-  `DemoSelectionReplayTest` asserts that pinning changes *who* is protected and nothing
-  else: the callouts are identical to the pattern run.
-- **Self-update from public GitHub releases**: `releases/latest` unauthenticated. The pure logic is in
-  `:core` (`SemVer`, `Releases.parseLatest`, `UpdatePolicy`) and is tested: numeric rather than
-  lexical comparison, pre-release below release, and a garbled tag is never "newer". Automatic
-  checks: once per 24 h after a success, once per hour after a failure, triggered by arming,
-  opening the app/Settings, and the service watchdog (cheap: the policy is one prefs read).
-  Offline or HTTP 403/429 only updates the status line; the pilot is never nagged about a
-  failed check.
-- **Install only on a tap, via a PackageInstaller session.** flightdeck-air learned in the field
-  that the `ACTION_VIEW` intent sometimes showed no prompt at all, and that a truncated download fails
-  in the installer with no UI. So Sentry verifies the length, the package name and that the version is
-  newer *before* committing a session, which always returns a result: the confirm screen, or an error
-  Sentry can show. No FileProvider is needed, because the session reads the file itself. A signature
-  conflict is turned into the uninstall-once instruction.
-- **"Install unknown apps"** is checked first (`canRequestPackageInstalls`). If it is off, a dialog explains
-  it and opens Android's page for Sentry. **Updating while armed** needs a second confirmation, because
-  replacing the app stops callouts until it is reopened (or until the opt-in re-arm-on-update brings it back).
-- **Signing.** A single release key (`~/.sentry-release.jks`, RSA 2048, 10,000 days, cert
-  SHA-256 `07d612bf…51dc`) is used by CI through repository secrets. The release workflow fails if
-  `apksigner` shows any other certificate. Settings shows whether the installed copy has that
-  certificate, so a pilot on an old debug-signed build knows ahead of time that a one-time
-  uninstall is coming. v1 (JAR) signing is not produced: minSdk 26 only needs v2.
-- **Version from one file.** `VERSION` → `versionName`; `versionCode = M·10000 + m·100 + p`, so it
-  can only go up with the version (0.2.0 was 2, 0.3.0 is 300). The release workflow refuses a tag
-  that doesn't match `VERSION`. `-PsentryVersion=` builds a test copy (0.2.9 was used to test the
-  updater against the published v0.3.0).
-- **Minify stays off.** There is no proguard config yet that has passed a smoke test.
-- **Verified end to end on the emulator (2026-09-24).** 0.2.0 (CI debug key) refuses 0.3.0 with
-  `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (`docs/install-0.3.0-over-0.2.0.txt`). A local 0.2.9 found the
-  published v0.3.0, raised the notification and the banner, sent the pilot through "Install unknown apps", checked
-  the 5,419,381-byte APK and opened the installer. After tapping Update it was running 0.3.0 (versionCode 300),
-  with settings kept. Found there and fixed on `main` after the tag: the status line showed a message saved before
-  the update ("Sentry 0.3.0 is available" on 0.3.0). It is now derived from the installed and latest versions, with a
-  failed last check appended.
+- `BigTextStyle` in a **heads-up** collapses newlines into spaces (seen on the emulator), so the four lines are a
+  custom `RemoteViews` layout with `DecoratedCustomViewStyle` (the system adds header and actions). A decorated
+  heads-up gets ≈58 dp of content with the action row, so the heads-up has three rows (title / where / prediction +
+  hint right-aligned); expanded, four. COLLISION RISK (no actions) has the room anyway.
+- In-place updates use `setOnlyAlertOnce(true)` on the HIGH channel: SystemUI updates a showing heads-up without
+  re-alerting. A cadence repeat for a banner that has already timed out is re-posted with `setSilent(true)` (the
+  group-alert trick), which never pops up. An escalation re-posts without only-alert-once, which pops it up again.
+- Timers: each popup and each cadence refresh restarts the banner-duration timer; the per-second countdown refresh
+  does not and never re-posts a cancelled banner. CLEAR cancels at once.
+- Banner colours are darker variants (amber #B26A00, red #D32F2F, grey) readable on the light notification background.
+- Actions are `PendingIntent.getForegroundService` to the service (never an activity). The status notification has
+  no content intent: **Open Sentry** is the only way in.
 
-## Fitting the RC Plus screen (v0.3.2, 2026-09-24)
+## Housekeeping and connectivity
 
-The owner's photo of the real DJI RC Plus showed the main screen's buttons as "AR", "T", "Dr" and "Sett", with the
-left panel cramped. **Root cause:** every layout had been sized on an emulator at 1920×1200 / **240 dpi**
-(1280×800 dp). The RC Plus has a 7" 1920×1200 panel at about **320 dpi** (density 2.0), which leaves about
-**960×600 dp**, a quarter less width. Reproduced on an AVD with the real density (`rc-plus`, screenshot 27:
-"Tes", "Dron", "Settin", and the Sources and callouts panels clipped mid-line).
+`InternetMonitor`: observed state from (network has INTERNET capability) + (any HTTP response from the worker within
+20 s; a 401/404 still proves the internet) + (last network-level failure newer than the last response). The observed
+state must hold 10 s before it is adopted; start-up ONLINE is silent, start-up OFFLINE is alerted. The service probes
+`GET {worker}/` only when nothing answered for 15 s. Housekeeping alerts: internet lost / back, bound aircraft
+acquired ("Watching …") / lost (first "Drone position lost" only; the "Waiting …" drop-out 15 s later is screen-only)
+/ back, pre-flight result, "Sentry sounds on".
 
-- **Decide by width in dp, not by device.** `ScreenLayout.compactFor(widthDp)` is true below 1000 dp (unknown width
-  counts as compact, because that plan fits everywhere). It takes `Configuration.screenWidthDp`, so a controller with
-  a larger display size or font setting gets the compact plan as well. `ScreenLayout` is plain Kotlin and has unit tests.
-- **Reflow, don't drop.** In compact mode, the compass column shrinks (weights 1.2 / 0.85 / 1.35, against 1.15 / 0.95 / 1.2
-  in wide mode) and the drone panel moves under the compass. That leaves the left column for the banner, the Sources table and the
-  buttons, and gives the callouts column the extra width. The compass is square and takes the height left over under the
-  drone panel, so a long controller-mode description shrinks the compass rather than being cut. Settings becomes
-  one scrolling column (`ScreenLayout.settingsColumns`).
-- **Labels never truncate.** The buttons have one line, uniform auto-size from 11 to 20 sp, and a fixed height (56 dp in compact
-  mode, 76 dp in wide mode). In compact mode ARM gets its own full-width row, with Test / Drone… / Settings below it. `baselineAligned="false"`
-  on the row: with auto-size the labels can end up different sizes, and at font scale 1.3 baseline alignment pushed
-  two buttons down.
-- **Tables move text instead of cutting it.** The monospace Sources and Targets rows put their trailing detail on
-  an indented second line when it doesn't fit the measured width. The callouts and targets panels show as many
-  whole lines as fit and end in "…" (newest first, so only the oldest callout is shortened; all callouts are also
-  in the log and notifications), instead of the panel edge cutting a line in half.
-- **Radar drawing constants scale with density** (they were raw px tuned at density 1.5) and shrink to 70% at most
-  on a small compass. The "S" label now stays inside the view; before, it was drawn past the bottom edge.
-- **Verified:** `rc-plus` (API 34, 320 dpi) disarmed, replay, live-armed, Settings, picker; the old 240 dpi profile (wide layout
-  unchanged); the **Android 10 / API 29** image at 320 dpi (what the RC Plus runs): the replay produced all callouts, with no
-  crash and nothing under the status bar or the navigation bar. Font scale 1.3 was also checked. **Not verified:** the real controller.
-  Its exact display-size setting is unknown (its truncation was worse than the emulator's), which is why the decision is
-  by measured dp.
+## Low power and latency
 
-> **Corrected in v0.3.3:** 320 dpi was still too generous (see below). The two-row button box and the "fit whole
-> lines" callout clipping were replaced by a pinned action bar and scrolling columns.
+`PollRates.of(boundAirborne)`: airborne 2 / 2 s, on the pad or absent 5 / 5 s, station 1 s. Pollers read the rate each
+cycle. Latency: `AlertEvent.crossedAtMs` is interpolated from each tier's margin between the two ticks around the
+crossing; the service logs detection + (sound start − tick) as "alert latency x.x s". `LatencyTest` checks both that
+and the 1 s engine against a 10 Hz engine on the same data (< 2 s including a 250 ms sound-start budget).
 
-## v0.3.3 (2026-09-24): the real controller, one bound aircraft, the flight volume, coexistence
+## Pre-flight
 
-### The RC Plus screen, part 2: it behaves as 400 dpi, and nothing may depend on scrolling
+`Preflight.items(facts)` is pure (tested); the service gathers the facts with one-shot fetches, so it works armed or
+not, plays the warning sound as the audibility test, and posts the summary as a housekeeping alert. A missing
+vibrator is reported, not failed.
 
-The owner, on the real controller: "Can't scroll on Sentry, so can't disarm, select settings, etc." An AVD at
-**density 400** (1920×1200, Android 10, default font scale; AVD `rc-plus-29`) reproduces the earlier photo **exactly**
-("AR", "T", "Dr", "Sett", screenshot 37), where 320 dpi gave "Tes", "Dron", "Settin". So the app gets about
-**768×480 dp**. Armed in controller mode, 0.3.1's drone panel pushed the whole button row off the bottom (38), and the
-root `LinearLayout` could not scroll (39: a swipe changes nothing). That is the stuck state the owner hit.
+## Settings
 
-- **Pinned action bar.** ARM/DISARM · Test · Settings sit in a bottom bar that is a direct child of the root,
-  **outside every scroll container**. The bar is always on screen, whatever the panels contain.
-- **Every column scrolls.** Each of the three columns is its own `ScrollView` (`fillViewport`, visible scrollbar).
-  The columns are siblings, never nested, so there is no nested-scroll conflict. Verified by `adb shell input swipe` on
-  each column, with before and after screenshots (40, 41).
-- **`wrap_content` + weight inside a scroll view, never `0dp` + weight.** In a scroll view's unbounded measure pass,
-  `LinearLayout` re-shares the wrapped heights of `0dp` children by weight. That gave Targets empty space and clipped
-  Callouts below their text, where it could not be scrolled to. Found with `dumpsys activity top` bounds. With
-  `wrap_content` the weight only hands out spare height when the column fits. The compass asks only for its
-  `minHeight` (170 dp) in the unbounded pass, so it shrinks before a column starts to scroll.
-- The "fit whole lines and end in …" callout clipping from 0.3.2 was removed: callouts now scroll instead.
-- Settings: Back/Save stay pinned at the top and the page scrolls. The order is rings (and targets shown),
-  cylinders, this controller's aircraft, then everything else, with the replay last.
+New keys: prediction (`trackSec`, `warningSec`, `collisionSec`, misses, `corridorDeg`), `zoneAlertNm`, `alertStyle`,
+cadence intervals, `bannerSec`, `gotItSec`, `quietMin`, `ignoreEnabled`, per-level `sound_<key>` / `vol_<key>`,
+`vibrationOn`, `replayCrossing`. One-time migration (`schema` 400): a stored ceiling of exactly 2,000 ft (the old
+default, stored by 0.3.4's auto-save) becomes 1,500; the voice keys are removed. A ceiling the pilot chose is kept.
+Invalid prediction ordering falls back to the defaults in the engine config, and the Settings screen refuses to store it.
 
-### Bound to one aircraft (selection is the pinned serial, else the controller)
+## Kept from 0.3.x
 
-Owner: "I don't want it to pick another variable, needs to be a constant. We can't have the pilot thinking his drone is
-protected but really it's protecting another. Needs to be a fixed setting, per controller." And: "just serial number
-or controller as a fallback."
+Selection (pinned serial else controller cylinders, no other drone ever), the 400 dpi screen rules (pinned action
+bar, every column scrolls), Settings auto-save, stacked feeds with independent backoff and a watchdog, UI derived from
+live state every tick, the JSON depth guard, self-update from GitHub releases (never while armed).
 
-- `DroneSelector` has exactly two outcomes: **PINNED** (the airframe whose serial matches, airborne or on the pad) or
-  **CONTROLLER**. Other drones are never candidates. The callsign pattern, serial allowlist, multi-match logic, the
-  Drone… picker and the manual "protect this controller" were **deleted**, not switched off, together with their tests.
-  The pre-0.3.3 prefs are simply no longer read.
-- Pinned but absent → `waitingForBound`: banner "WAITING FOR THIS CONTROLLER'S AIRCRAFT · <serial>", said once on arm
-  (after the 5 s start-up grace) and once per drop-out (after the existing 15 s lost and 30 s fallback). The controller
-  cylinders protect the pilot meanwhile. It is re-acquired only on a fresh report (15 s old or newer).
-- "Bound to: <serial> · <callsign>" (or "NO AIRCRAFT PINNED …") is on the main screen in every state, armed or not.
-- Pinning without typing: Settings lists the **aircraft in the feed now** (serial · callsign · model, from one fleet
-  fetch when Settings opens, or "Refresh list"). Tapping one pins it. `model` was added to `Ownship` (FDA
-  `drone.model`, DroneSense `model`).
-- Tests (`PinnedSelectionTest`, `DemoSelectionReplayTest`): present airborne and on the pad; absent → controller
-  for 600 s with another airborne drone in the feed, which is never watched; appears an hour later → bound at once;
-  drop-out → waiting → back; and a demo run bound to an absent airframe gives exactly the nothing-pinned cylinder
-  callouts and never watches DEMO-1. A mutation that lets a pattern match while bound fails 5 tests.
+## Verification (0.4.0)
 
-### The flight volume: surface up to X ft above the drone
-
-Owner: "we never want anything flying under us." `SentryConfig.ceilingAboveFt` (default 2,000; Settings "Ceiling above
-aircraft") replaces the symmetric ±`verticalBandFt`. A target is inside when `dv <= ceiling (+200 ft hysteresis once
-alerting)`, with no lower limit; unknown altitude is inside. The predictive rule uses the same test on the smaller
-of "now" and "at CPA". Tests: 3,000 ft below at 0.4 nm → WARNING, 3,000 ft above → silent, the same pair for the
-predictive rule, and the ceiling as a setting. Restoring `abs(dv)` fails 2 of them. The demo callouts are
-unchanged (N388KM was within a few hundred feet of DEMO-1). Cylinder floors default to SFC, shown as "SFC".
-
-### What the Targets list and compass show
-
-`TargetDisplay.filter` (pure, tested): within 10 nm of the watched aircraft, or 15 nm of the controller when protecting
-it, and hidden above 18,000 ft judged on `alt_geom`, else `alt_baro`. Unknown altitude stays shown. All three are
-settings. **An aircraft at advisory or worse is always shown**, whatever the filter, so the screen never hides what
-Sentry is talking about. The engine still evaluates everything within the traffic radius, so alerts are unaffected.
-The label says so: "Targets · 1 within 10 nm of aircraft · ≤18,000 ft · 16 hidden".
-
-### Why the Drone feed is empty
-
-The owner lost an hour to a missing token. `FleetStatus.of` (pure, tested) turns the two fleet fetches into one reason:
-"NO TOKEN: paste the fleet token in Settings", "TOKEN REJECTED (HTTP 401|403): check the fleet token",
-"feed error: …", "no drones in feed", or "N drones in feed (dronesense: HTTP 500)". The Sources row shows it, up to
-60 characters, wrapped instead of cut, and so does Settings under the aircraft list.
-
-### Coexistence with DroneSense
-
-Owner: "make sure this software never impacts DroneSense on the controller while we're flying."
-
-- No activity is ever started by the service, the boot receiver or a notification action. Alerts are heads-up
-  notifications (no full-screen intent) and speech. The main screen comes forward only from the pilot's own tap on
-  Sentry's notification (`PendingIntent` to `MainActivity`, `SINGLE_TOP`) or icon. Checked: armed + replay with the
-  Android Settings app in front, `mResumedActivity` sampled every 5 s for 3 min was Settings in 36/36 samples
-  (`docs/coexistence-resumed-activity-3min.txt`).
-- The updater never opens the installer while armed. `startUpdate` refuses with a toast, `downloadAndInstall` refuses,
-  and the install receiver re-checks just before `startActivity`: if the pilot armed during the download, the session
-  is abandoned. The update-available notification is on a LOW (silent) channel.
-- Audio focus `GAIN_TRANSIENT_MAY_DUCK`, requested per callout and released right after it. It used to be held
-  across a whole queue. No media session.
-- No prompts while armed: permissions are requested on the ARM tap and arming happens in
-  `onRequestPermissionsResult`. The battery-optimisation request moved to Settings only.
-- Crash isolation: per-poll `catch (Exception)` plus `catch (StackOverflowError)`, and `Parsers.parse` refuses JSON
-  nested deeper than 64. `MalformedPayloadTest` found that `[[[[…` made the JSON library throw `StackOverflowError`, an
-  Error the poll catch did not stop, so a hostile or corrupt payload could have killed the process. Every parser is
-  now tested with non-JSON (only an ordinary Exception may escape) and wrong-shape JSON (parses to nothing).
-- Resource use (Android 10 AVD at 400 dpi, 4 vCPU, software GL; armed live 5 min, another app in front):
-  **3.3 % of one core** (0.8 % of the device); **PSS 103 MB on average** for a service-only process (76 MB at the end
-  of the window), 138 MB for a process that had drawn the UI (hwui native heap under software GL; not measured on
-  real hardware). RSS averaged 184 MB, but RSS counts shared framework pages (`com.android.phone`: 138 MB RSS for
-  32 MB PSS on the same image), so it can't meet a 120 MB target for any app here. Full log:
-  `docs/perf-armed-5min-rc-plus-29.txt`.
-- No USB, serial or DJI SDK code or permission.
-
-## v0.3.4 (2026-09-24): Settings save themselves, the keyboard gets out of the way
-
-Owner: "can we make it so stuff typed in the field auto saves, and if enter hit or the save button touched, keyboard
-dismisses?"
-
-- **Auto-save.** Each field's `TextWatcher` validates at once and schedules one shared, debounced (400 ms) save of the
-  whole page. Switches, the volume slider and the replay options save the same way. Save, Back, Enter/Done, system
-  Back and `onPause` save immediately. The service already re-read `Settings` on every 1 s tick (engine config, rings,
-  voice, pinned serial, cylinders, target display, controller elevation, circle) and on every poll (fleet token,
-  worker URL, station URL, traffic radius), so no service change was needed to apply a value. It now logs each change
-  of the binding (`Selection: bound to <serial>` or `bound to nothing`) so that can be checked in logcat.
-- **Never store garbage.** `FieldRules` (pure, unit-tested) parses a plain decimal only (no exponent, `NaN`,
-  `Infinity`, Java `d`/`f` suffix or comma) and checks it against the field's range. While the text is invalid the
-  field has a red outline with the range under it, and storage keeps the **last valid value**. The three rings are
-  also checked together (advisory ≥ caution ≥ warning). A mis-ordered trio turns all three red and the stored trio is
-  kept. Blank is valid only where it means something (controller elevation and circle centre: blank = GPS / unset).
-  The worker URL must be `http(s)://host`. The fleet token is trimmed. The pinned serial is shown and stored
-  upper-case and trimmed.
-- **Keyboard.** Every field is single-line with `actionDone`. Enter/Done, Save, Back and a tap outside any field hide
-  the keyboard and clear focus. The page root is focusable, so focus goes there and not to the next field. Its
-  default focus highlight is off, because Android 8+ paints a grey wash over a focused view that has no focus state.
-  Tapping another field just moves focus and the keyboard stays up.
-- **The cylinder editor** is still an explicit dialog (Save / Cancel / Delete), so it does not auto-save: Cancel must
-  still mean cancel. Its fields get the same red outline, range and Done handling, and Save refuses while one is red.
-- Known behaviour: while armed, retyping the serial character by character can bind to the partial serial for a
-  moment (after a 400 ms pause). Sentry then says "Waiting for this controller's aircraft" until the full serial
-  matches. Tapping the aircraft in the "in the feed now" list avoids this.
-- Verified on `rc-plus-29` (screenshots 58–65): typed caution 1.5 and it was stored with no Save; typed 2 and backed
-  out, and it reopened as 2; 75 went red with "0.1–50 nm" and 5 gave the ring-order error, with storage still at the
-  last valid value both times; Enter, Save (with the "Saved" toast), system Back and a tap outside each closed the
-  keyboard (`mInputShown=false`); a lower-case serial was stored upper-case, and the running service (same PID, not
-  restarted) logged `bound to 1581DEMO0001`, then `bound to nothing` after Clear.
-
-## v0.3.5 (2026-09-24): Sentry's own voice, adaptive callout cadence
-
-### Sentry's own voice (the RC Plus has no text-to-speech)
-
-The RC Plus runs DJI's stripped Android 10 with no TTS engine and no Google services, so `TextToSpeech` never
-initialised and 0.3.4 said "Voice unavailable" (tones and banners only). Per the reliability law the answer is
-stacking, not replacing: TTS stays first choice, and a bundled voice is always there underneath it.
-
-- **The bank.** `tools/voicebank/gen.py` renders `tools/voicebank/phrases.txt` offline with **Piper**
-  (`piper-tts`, the OHF-Voice build) and the voice **en_US-kristin-medium**. That voice was trained from scratch on
-  LibriVox recordings, which are **public domain** (model card: rhasspy/piper-voices). We ruled out the usual
-  `lessac` voice and the voices fine-tuned from it: the Blizzard-2013 Lessac data is under a research-only licence.
-  The generator is GPL, but only its audio output is committed, and that output is not a derivative work.
-  The bank has 217 clips: 0–99, "hundred", "thousand", "point", the letters A–Z, directions, the callout words, and
-  whole frequent sentences as single clips ("Drone position lost.", "Sentry armed."). The clips are Ogg Vorbis q3,
-  22.05 kHz mono. Each is trimmed, peak-normalised to −1 dBFS, padded with 12 ms of silence at each end, and sped up 1.2× (ffmpeg atempo, pitch kept): a word said on its own comes out long, and without this a stitched warning took 17.7 s.
-  `manifest.tsv` pairs each clip id with the words it stands for.
-- **Short inputs wobble.** A small neural voice sometimes turns a single letter or word into mumble; on the first
-  pass, "M." came out as 1.5 s of noise. So each clip is rendered several ways (spelling, pace and noise settings).
-  The generator transcribes every candidate with faster-whisper (small.en) and keeps the one heard as the intended
-  word, trying the most typical-length candidate first. `gen.py --check` then stitches real callouts together from
-  the bank and transcribes them, which is the test that matters.
-- **Grammar (`core/VoiceGrammar.kt`, pure, unit-tested).** The engine's existing speech text goes in; a clip
-  sequence comes out. Longest phrase match comes first, so whole sentences use their natural clip. "1,500" is read
-  as "one thousand five hundred", "3.0" as "three point zero", and TFR numbers digit by digit. A single letter is its
-  letter name. A zone name the bank can't say (a free-typed cylinder or geofence name) becomes "protected area" or
-  "geofence". A drone name with a space ("DEMO-1 Pilot") is spelled. `VoiceGrammarTest` runs a sweep of about
-  4,900 distinct sentences through the real engine, selector and health monitor. It checks every number the
-  phrasing can produce and every fixed sentence in `SystemPhrases`. It asserts that each one maps fully onto clips
-  that exist, with nothing spelled except drone names.
-- **Playback (`ClipVoice`).** The whole utterance is stitched into one PCM buffer: clips back to back, 60 ms for a
-  comma, 150 ms for a full stop. It plays as a single static `AudioTrack`, so there are no gaps between clips. It
-  uses the same attributes as TTS (`USAGE_ASSISTANCE_NAVIGATION_GUIDANCE`) inside the same per-callout ducking focus,
-  at the volume setting. The voice is ready as soon as the manifest is read and one clip decodes. The rest of the
-  bank decodes in the background, and any clip a callout needs sooner is decoded on demand. Every utterance is
-  logged as `CLIPVOICE <ms>: warning@0 . traffic@…` with each clip's start time.
-- **Selection (`AlertVoice`, rules in the pure `core/VoicePolicy.kt`, `VoicePolicyTest`).** It uses TTS if an engine is ready and hasn't failed recently, else the bundled voice.
-  A TTS `speak()` error, an `onError`, no start within 3 s, or no finish within 3 s + 90 ms per character (at most 15 s; a dead engine reports nothing) puts the bundled voice in charge at once for that
-  same callout, and it stays in charge for 5 minutes (sticky), after which TTS is tried again. A missing engine is
-  looked for again with backoff. The Voice row reads "OK (Google TTS)" or "OK (bundled voice)", and it only reads
-  UNAVAILABLE if the bank itself is damaged. Settings → Voice → **Test voice** plays a full warning through whichever
-  voice is in use.
-
-### Adaptive callout cadence
-
-The owner approved the numbers. `core/Cadence.kt` is a pure function from (level, range, trend, CPA,
-"passing said") to a band. The engine asks it for the interval each tick. The table is in the README ("Alert rules").
-Decisions that go beyond the table:
-
-- **1–3 nm at 20 s vs advisory at 30 s.** With the default rings, anything 1–3 nm away is advisory unless a
-  predictive warning or a controller cylinder lifts it. So the 20 s row applies to caution and warning, and a plain
-  advisory keeps its 30 s.
-- **"Close pass"** means Sentry called the aircraft inside the caution ring, or with a predictive warning. Only then
-  does it say "passing, diverging". An aircraft that turns away at 2.5 nm without ever coming close is just not
-  repeated.
-- **The predicted-CPA trigger for the 6 s band** needs the CPA both **within 30 s and inside the warning ring**. A
-  30 s CPA that misses by 2 nm doesn't count.
-- **The short sentence** has no severity word and no CPA tail: "Traffic, N388KM, west, 1,500 feet, 200 below,
-  closing." "Closing" replaces "converging" there. A parked or crossing aircraft says "passing".
-- **Two aircraft:** the engine emits and the queue orders by severity, then distance, so the closer aircraft goes
-  first at the same level. The queue (`core/CalloutQueue.kt`) keeps one sentence per aircraft and drops anything that
-  has waited more than 15 s.
-
-## Voice path
-
-- AudioAttributes `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE` + `CONTENT_TYPE_SPEECH`, with
-  focus `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`. DroneSense's audio ducks rather than pausing.
-  A tone (ToneGenerator on STREAM_MUSIC) plays before each utterance:
-  warning `TONE_CDMA_HIGH_SS` 700 ms, caution `TONE_PROP_BEEP2`, advisory `TONE_PROP_BEEP`,
-  info `TONE_PROP_ACK`.
-- The queue (`core/CalloutQueue.kt`) is ordered by severity, then distance (closer first), and keeps **one
-  pending item per aircraft**: a newer callout replaces an older one that hasn't been spoken yet. Items older than
-  15 s are dropped, because stale speech is wrong speech.
-- **Known trade-off:** Sentry doesn't interrupt an utterance that is already playing. A long predictive warning takes
-  about 6 s with TTS and longer with the bundled voice, so in the 6 s close band the next short callout can start
-  right after the previous one ends. That is why the close band uses the short sentence (v0.3.5).
-- Every callout is logged as `CALLOUT[...]`, every utterance as `SPEAK[tts|bundled] [...]`, and every bundled
-  utterance's clip timeline as `CLIPVOICE`, all under the
-  `Sentry` logcat tag. The UI's log panel shows the same lines.
-
-## Notifications
-
-- The `status` channel (LOW) is the ongoing foreground notification. It reads, for
-  example, "Watching DEMO-1 · 12 targets · station+cloud" and only updates when the text
-  changes.
-- The `alerts` channel is HIGH importance and silent, since Sentry plays its own audio; it
-  vibrates. It uses CATEGORY_ALARM and a 30 s timeout. There is one banner per aircraft
-  (updates replace it) and one per kind of health event. Heads-up banners over another app
-  were verified on the emulator.
-
-## Debug-only adb hooks
-
-`MainActivity` accepts `--es sentry_action replay|test|voice_test|set` (`set` takes `pinned`, `station`,
-`station_url`, `worker`, `elev`, and `force_bundled`, which skips TTS the way the RC Plus must) **only when
-`BuildConfig.DEBUG`**, for scripted demos. It will never disarm Sentry. Release builds
-ignore it.
+- `./gradlew testDebugUnitTest`: 157 core + 17 app = 174 tests, exit 0.
+- Emulator `rc-plus-29` with audio captured to WAV (`docs/audio-onsets-0.4.0.txt`): 60 sounds logged over five runs,
+  60 sound onsets, one per sound (the pinned replay 10/10, the crossing replay 19/19 twice with the collision tones
+  3.0 s apart, Got it run 10/10, pre-flight 2/2), plus 7 touch-sound clicks from the adb taps. Repeats are the
+  softer variant (warning full −15 dB / short −20 dB). Banners over another app, Got it → mute → instant return when
+  the miss shrank ("Sounds back for N388KM: turning toward the drone"), pre-flight, status notification, and a
+  5-minute armed coexistence run: 0 of 30 samples with Sentry resumed, 1.6 % of one core, PSS 116–124 MB
+  (`docs/coexistence-0.4.0-armed-5min.txt`). Logs: `docs/replay-logcat-0.4.0-*.txt`, `docs/preflight-and-live-0.4.0.txt`.
+- The health "lost" windows follow the poll rate (20 s + two cycles): on the emulator a fixed 15 s window flagged the
+  drone feed lost between two good 5 s low-power polls.
 
 ## Not done / out of scope
 
-- Controller mode on the real RC Plus: the emulator's `geo fix` did not reach the location
-  service, so the emulator runs used a shell test provider (lat/lon only) plus the elevation
-  override. Real GPS altitude handling and permission prompts need a check on the device.
-- The fleet feed was empty on 2026-09-23 evening, so callsign autocomplete and the live
-  stale/fallback path were exercised against a mock DroneSense feed (test callsigns).
+- The real RC Plus's sound library is unknown: the defaults are by name with fallbacks; the pre-flight Sound check
+  and each Settings Test button are the way to confirm on the controller.
+- The emulator has no GPS fix and a vibrator only as far as `hasVibrator()` reports; vibration patterns are unit-tested,
+  not felt.
+- The emulator's sound picker is Google's Sounds app; the RC Plus (no Google services) shows Android's own picker.
 
+## History
 
-- QR scanning for the fleet token: the token is pasted instead (clipboard button).
-- User-drawn geofences: out of scope. Circles and GeoJSON import are supported.
-- Beacon discovery could not be exercised on the emulator, because the emulator's NAT
-  doesn't pass LAN broadcasts. The code path is simple and the typed-URL path was verified
-  against a mock station.
-- The emulator isn't a real Doze or OEM-battery environment. Screen-off operation was
-  verified on the emulator; it still needs a check on the actual RC Plus.
-- Audio could not be heard headless (`-no-audio`). TTS initialised with Google TTS, and
-  utterance start/done callbacks fired with realistic durations, which indicates synthesis
-  ran.
+0.1–0.2 spoke with text-to-speech; 0.3.5 bundled a recorded voice because the RC Plus has no TTS engine. 0.4.0
+removes voice by owner decision (a distinct sound + a glanceable banner, then a look at AirSense / ForeFlight, is
+faster to act on over rotor and road noise, and doesn't compete with the radio). The voice bank, its generator
+(`tools/voicebank`) and the grammar tests are deleted; the sentence formatting survives as the banner text.

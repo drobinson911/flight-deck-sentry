@@ -1,0 +1,74 @@
+Flight Deck Sentry 0.4.0: audio capture of the rc-plus-29 emulator (QEMU_AUDIO_DRV=wav), one WAV for all runs.
+Onsets: energy envelope in 10 ms frames, rise above -40 dBFS after >= 250 ms quiet (the WAV compresses long silences: the audio HAL stops writing in standby).
+Each onset is matched, in order, to the SOUND lines Sentry logged. Onsets of 10-20 ms at -38 dB are Android touch-sound clicks from the adb taps
+(sound_effects_enabled=1 on the image): the Got it tap in run C, and the Settings / Pre-flight / OK / ARM taps between runs C and E.
+
+0.09  dur  0.61s  peak   -9.7 dB   A pinned replay: bound/full
+   4.28  dur  0.41s  peak   -6.9 dB   A pinned replay: track/full
+   8.02  dur  0.80s  peak  -15.0 dB   A pinned replay: warning/full
+  13.12  dur  0.67s  peak  -19.9 dB   A pinned replay: warning/short
+  16.89  dur  0.65s  peak  -19.9 dB   A pinned replay: warning/short
+  20.63  dur  0.65s  peak  -19.9 dB   A pinned replay: warning/short
+  24.37  dur  0.65s  peak  -20.4 dB   A pinned replay: warning/short
+  28.11  dur  0.65s  peak  -20.4 dB   A pinned replay: warning/short
+  31.84  dur  0.65s  peak  -19.8 dB   A pinned replay: warning/short
+  33.83  dur  1.31s  peak  -10.7 dB   A pinned replay: passing/full
+  38.58  dur  0.61s  peak   -9.5 dB   B crossing replay: bound/full
+  42.84  dur  0.45s  peak   -6.6 dB   B crossing replay: track/full
+  46.60  dur  0.89s  peak  -16.6 dB   B crossing replay: collision/full
+  49.54  dur  0.90s  peak  -16.3 dB   B crossing replay: collision/full
+  52.58  dur  0.90s  peak  -16.3 dB   B crossing replay: collision/full
+  55.55  dur  0.90s  peak  -16.2 dB   B crossing replay: collision/full
+  58.54  dur  0.90s  peak  -16.6 dB   B crossing replay: collision/full
+  61.54  dur  0.90s  peak  -16.4 dB   B crossing replay: collision/full
+  64.55  dur  0.90s  peak  -16.7 dB   B crossing replay: collision/full
+  67.55  dur  0.90s  peak  -16.5 dB   B crossing replay: collision/full
+  70.56  dur  0.90s  peak  -16.7 dB   B crossing replay: collision/full
+  73.56  dur  0.90s  peak  -16.5 dB   B crossing replay: collision/full
+  76.55  dur  0.90s  peak  -16.3 dB   B crossing replay: collision/full
+  79.53  dur  0.90s  peak  -16.5 dB   B crossing replay: collision/full
+  82.52  dur  0.90s  peak  -16.2 dB   B crossing replay: collision/full
+  85.54  dur  0.90s  peak  -16.4 dB   B crossing replay: collision/full
+  88.52  dur  0.90s  peak  -16.5 dB   B crossing replay: collision/full
+  91.51  dur  0.90s  peak  -16.3 dB   B crossing replay: collision/full
+  94.51  dur  1.32s  peak  -10.7 dB   B crossing replay: passing/full
+  99.20  dur  0.61s  peak   -9.7 dB   C pinned replay + Got it: bound/full
+ 103.47  dur  0.44s  peak   -6.7 dB   C pinned replay + Got it: track/full
+ 107.21  dur  0.79s  peak  -15.4 dB   C pinned replay + Got it: warning/full
+ 108.42  dur  0.01s  peak  -39.3 dB   touch click
+ 112.36  dur  0.63s  peak  -19.4 dB   C pinned replay + Got it: warning/short
+ 116.07  dur  0.65s  peak  -19.8 dB   C pinned replay + Got it: warning/short
+ 119.81  dur  0.65s  peak  -19.8 dB   C pinned replay + Got it: warning/short
+ 123.55  dur  0.65s  peak  -19.9 dB   C pinned replay + Got it: warning/short
+ 127.29  dur  0.65s  peak  -19.9 dB   C pinned replay + Got it: warning/short
+ 131.06  dur  0.65s  peak  -19.8 dB   C pinned replay + Got it: warning/short
+ 133.04  dur  1.31s  peak  -10.7 dB   C pinned replay + Got it: passing/full
+ 137.76  dur  0.01s  peak  -38.3 dB   touch click
+ 140.90  dur  0.01s  peak  -38.3 dB   touch click
+ 144.04  dur  0.01s  peak  -38.4 dB   touch click
+ 146.20  dur  0.02s  peak  -38.2 dB   touch click
+ 148.28  dur  0.80s  peak  -15.4 dB   D pre-flight: warning/full (the pre-flight audibility test)
+ 150.97  dur  1.06s  peak  -11.6 dB   D pre-flight: preflight/full
+ 155.92  dur  0.02s  peak  -38.4 dB   touch click
+ 157.24  dur  0.01s  peak  -38.2 dB   touch click
+ 160.44  dur  0.60s  peak   -9.6 dB   E crossing replay (final build): bound/full
+ 164.70  dur  0.41s  peak   -6.9 dB   E crossing replay (final build): track/full
+ 168.45  dur  0.90s  peak  -16.2 dB   E crossing replay (final build): collision/full
+ 171.40  dur  0.90s  peak  -16.6 dB   E crossing replay (final build): collision/full
+ 174.44  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 177.41  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 180.40  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 183.42  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 186.41  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 189.43  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 192.42  dur  0.90s  peak  -16.3 dB   E crossing replay (final build): collision/full
+ 195.41  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 198.41  dur  0.90s  peak  -16.4 dB   E crossing replay (final build): collision/full
+ 201.42  dur  0.90s  peak  -16.6 dB   E crossing replay (final build): collision/full
+ 204.40  dur  0.90s  peak  -16.2 dB   E crossing replay (final build): collision/full
+ 207.40  dur  0.89s  peak  -16.7 dB   E crossing replay (final build): collision/full
+ 210.41  dur  0.90s  peak  -16.2 dB   E crossing replay (final build): collision/full
+ 213.41  dur  0.90s  peak  -16.6 dB   E crossing replay (final build): collision/full
+ 216.41  dur  1.31s  peak  -10.8 dB   E crossing replay (final build): passing/full
+
+Sentry sounds logged: 60; sound onsets: 60; touch clicks: 7; unmatched onsets: 0
