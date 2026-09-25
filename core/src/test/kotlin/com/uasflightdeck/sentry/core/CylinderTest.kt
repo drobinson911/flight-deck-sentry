@@ -87,14 +87,14 @@ class CylinderTest {
             out += e.step(sec(n), controller(sec(n)), listOf(tgt(sec(n), 225.0, nm, ELEV + 400, gs = 120.0, trk = 45.0)), zones, 0.0).events
         }
         val entries = out.filter { it.kind == EventKind.CYLINDER_ENTRY }
-        assertEquals(listOf("advisory area", "ops area"), entries.map { it.text.removePrefix("Traffic entering ").substringBefore(",") })
+        assertEquals(listOf("advisory area", "ops area"), entries.map { it.text.removePrefix("Traffic entering ").substringBefore(":") })
         val opsEntry = entries[1]
-        assertTrue(opsEntry.text, opsEntry.text.matches(Regex("Traffic entering ops area, N388KM, southwest, [0-9,]+ feet, 400 above, converging\\.")))
-        assertTrue(opsEntry.speech.contains("N 3 8 8 K M"))
+        assertTrue(opsEntry.text, opsEntry.text.matches(Regex("Traffic entering ops area: SW [0-9,]+ ft · 120 kt · 400 above")))
         assertTrue(opsEntry.severity >= Severity.CAUTION)
-        // predictive: CPA 0 nm inside the warning ring, altitude inside a cylinder -> WARNING before ops entry
-        val warn = out.first { it.severity == Severity.WARNING }
+        // predictive: CPA 0 nm, altitude inside a cylinder -> WARNING before the ops entry
+        val warn = out.first { it.tier == Tier.WARNING }
         assertTrue(warn.timeMs <= opsEntry.timeMs)
+        assertEquals(Phase.ESCALATION, warn.phase)
     }
 
     @Test fun jsonRoundTripAndValidation() {

@@ -200,7 +200,7 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
             val name = d.callsign ?: d.name
             if (prevMode != SelectionMode.PINNED)
                 events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
-                    "Watching $name, this controller's aircraft.", "Watching ${Phrasing.spelledId(name)}, this controller's aircraft.")
+                    "Watching $name, this controller's aircraft.")
             pendingControllerSpeech = null
             controllerGpsAnnouncedLost = false
         } else {

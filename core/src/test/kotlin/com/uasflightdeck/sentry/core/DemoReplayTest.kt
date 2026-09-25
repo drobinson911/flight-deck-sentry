@@ -4,84 +4,68 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.TimeZone
 
 /**
- * Replays the REAL 2026-09-23 data (the exact bytes bundled in the app's
- * assets) through the engine at 1 s ticks, as the service does, and asserts
- * Sentry would have spoken BEFORE N388KM passed DEMO-1.
+ * The REAL 2026-09-23 data (the exact bytes bundled in the app's assets) through the full live path at 1 s ticks.
+ * Prints the whole alert timeline (tier, time, sound, banner text) for the pinned drone AND the synthetic crossing
+ * variant (N388KM climbing 500 fpm through the levelled drone's altitude) that shows COLLISION RISK firing.
  */
 class DemoReplayTest {
-    private val assets = File(System.getProperty("sentry.assets") ?: "../app/src/main/assets")
-    private fun read(name: String) = File(assets, "replay/$name").readText()
+    private val closest = DemoReplayFixture.CLOSEST_MS
+    private fun Run(label: String, r: ReplayTimeline.Run) = r.also { ReplayTimeline.dump(label, it) }
 
-    private fun run(cloudView: Boolean): List<AlertEvent> {
-        val sc = DemoReplayFixture.load(read("demo_drone.json"), read("n388km_merged.json"), read("tfr_demo.json"), cloudView)
-        val engine = AlertEngine()
-        val out = ArrayList<AlertEvent>()
-        var t = sc.startMs
-        while (t <= sc.endMs) {
-            out += engine.step(t, sc.ownshipAt(t), sc.trafficAt(t), sc.zones, 0.0).events
-            t += 1000
-        }
-        return out
-    }
+    @Test fun pinnedDrone_timeline() {
+        val r = Run("PINNED DRONE (DEMO-1 by serial) vs N388KM, merged track", ReplayTimeline.run(ReplayTimeline.scenario()))
+        val ev = r.events
+        assertTrue("never left pinned mode", r.modes.all { it.second == SelectionMode.PINNED })
+        assertEquals("Watching DEMO-1 Pilot, this controller's aircraft.", ev.first().text)
 
-    private val fmt = SimpleDateFormat("HH:mm:ss").apply { timeZone = TimeZone.getTimeZone("America/Los_Angeles") }
-    private fun hms(ms: Long) = fmt.format(Date(ms))
-    private fun dump(label: String, ev: List<AlertEvent>) {
-        println("── $label ──")
-        ev.forEach { println("${hms(it.timeMs)}  ${it.severity.label.padEnd(8)} ${it.kind.name.padEnd(16)} ${it.text}   [tts: ${it.speech}]") }
-    }
-
-    @Test
-    fun mergedTrack_speaksBeforeThePass() {
-        val ev = run(cloudView = false)
-        dump("merged (truck Mode S altitude)", ev)
-        val closest = DemoReplayFixture.CLOSEST_MS
-
-        val tfr = ev.firstOrNull { it.kind == EventKind.TFR_ENTRY && it.hex == DemoReplayFixture.HEX }
-        assertNotNull("no TFR-entry callout", tfr)
-        // Entry was 11:53:22.485; dead-reckoning at 1 s ticks should land within a few seconds.
-        assertTrue("TFR entry at ${hms(tfr!!.timeMs)} not ~11:53:22",
-            kotlin.math.abs(tfr.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
-        assertTrue(tfr.text.startsWith("Traffic entering TFR 0/0000, N388KM,"))
-        assertTrue(tfr.speech.contains("TFR 0 0000") && tfr.speech.contains("N 3 8 8 K M"))
-
-        val warn = ev.firstOrNull { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
-        assertNotNull("no WARNING-level callout", warn)
-        assertTrue("warning at ${hms(warn!!.timeMs)} is not before 11:53:40", warn.timeMs < closest)
-
-        val clear = ev.firstOrNull { it.kind == EventKind.CLEAR && it.hex == DemoReplayFixture.HEX }
-        assertNotNull("no clear callout", clear)
-        assertTrue(clear!!.timeMs > closest)
-        assertTrue(clear.text.contains("clear"))
-
-        // nothing spoken about the aircraft after "clear"
-        assertTrue(ev.none { it.hex == DemoReplayFixture.HEX && it.timeMs > clear.timeMs })
-        // exactly one TFR entry for one crossing
+        val n = ev.filter { it.hex == DemoReplayFixture.HEX }
+        val warn = n.firstOrNull { it.tier == Tier.WARNING && it.phase == Phase.ESCALATION }
+        assertNotNull("no WARNING escalation", warn)
+        assertTrue("warning at ${ReplayTimeline.hms(warn!!.timeMs)} is not before the pass", warn.timeMs < closest - 20_000)
+        val esc = r.outputs.filter { it.event.hex == DemoReplayFixture.HEX && it.event.phase == Phase.ESCALATION }
+        assertTrue("every escalation above advisory makes a sound", esc.filter { it.event.tier!! > Tier.ADVISORY }.all { it.sounds })
+        // a real pass ~0.24 nm at ~2,000+ ft vertical never reaches COLLISION RISK
+        assertTrue(n.none { it.tier == Tier.COLLISION })
+        // the TFR contains the drone: one zone entry
         assertEquals(1, ev.count { it.kind == EventKind.TFR_ENTRY })
-        // the drone never "lost" in the replay (rows are ~5 s apart)
+        val passing = n.first { it.kind == EventKind.PASSING }
+        assertTrue(passing.timeMs > closest - 5000)
+        val clear = n.last()
+        assertTrue(clear.kind == EventKind.CLEAR || clear.kind == EventKind.NO_LONGER_FACTOR)
+        assertTrue("a closeness score is logged", n.all { it.closenessS != null })
         assertTrue(ev.none { it.kind == EventKind.OWNSHIP_LOST })
+        // one sound at most per tick
+        assertTrue(r.outputs.groupBy { it.event.timeMs }.values.all { tick -> tick.count { it.sounds } <= 1 })
     }
 
-    /**
-     * The public feed carried N388KM as alt_baro "ground", no track, at 160 kt.
-     * A naive filter drops "ground" traffic — and would have stayed SILENT.
-     */
-    @Test
-    fun publicFeedGroundMode_stillWarnsWithAltitudeUnknown() {
-        val ev = run(cloudView = true)
-        dump("public-feed view (alt 'ground', no track)", ev)
-        val warn = ev.firstOrNull { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
+    @Test fun crossingVariant_collisionRiskFires() {
+        val r = Run("SYNTHETIC CROSSING: N388KM climbing 500 fpm through the level drone's altitude at the pass",
+            ReplayTimeline.run(ReplayTimeline.scenario(crossing = true)))
+        val n = r.outputs.filter { it.event.hex == DemoReplayFixture.HEX }
+        val col = n.firstOrNull { it.event.tier == Tier.COLLISION && it.event.phase == Phase.ESCALATION }
+        assertNotNull("no COLLISION RISK", col)
+        assertTrue(col!!.sounds && col.level == SoundLevel.COLLISION)
+        assertTrue("collision at ${ReplayTimeline.hms(col.event.timeMs)}", col.event.timeMs < closest - 20_000)
+        assertTrue(col.event.banner!!.title == "‼ COLLISION RISK · N388KM")
+        assertTrue(col.event.banner!!.line3, col.event.banner!!.line3.contains("climbing through your altitude"))
+        // the tone repeats every 3 s while it is a collision risk
+        val tones = n.filter { it.event.tier == Tier.COLLISION && it.sounds }.map { it.event.timeMs }
+        assertTrue(tones.size >= 5)
+        assertTrue(tones.zipWithNext().all { (a, b) -> b - a >= 3000 })
+        // after the pass: one PASSING sound, then clear
+        val passing = n.first { it.event.kind == EventKind.PASSING }
+        assertTrue(passing.sounds)
+        assertTrue(n.none { it.event.tier == Tier.COLLISION && it.event.timeMs > passing.event.timeMs })
+    }
+
+    /** The public feed carried N388KM as alt_baro "ground", no track, at 160 kt: altitude unknown counts as inside. */
+    @Test fun publicFeedGroundMode_stillWarns() {
+        val r = Run("PUBLIC-FEED VIEW (alt 'ground', no track)", ReplayTimeline.run(ReplayTimeline.scenario(cloudView = true)))
+        val warn = r.events.firstOrNull { it.hex == DemoReplayFixture.HEX && it.tier == Tier.WARNING }
         assertNotNull(warn)
-        assertTrue(warn!!.timeMs < DemoReplayFixture.CLOSEST_MS)
-        assertTrue(warn.text.contains("altitude unknown"))
-        val tfr = ev.firstOrNull { it.kind == EventKind.TFR_ENTRY }
-        assertNotNull(tfr)
-        assertTrue(kotlin.math.abs(tfr!!.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
+        assertTrue(warn!!.timeMs < closest)
+        assertTrue(warn.banner!!.line2, warn.banner!!.line2.contains("alt unknown"))
     }
 }

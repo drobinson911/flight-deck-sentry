@@ -5,9 +5,9 @@ import org.junit.Test
 
 class TargetDisplayTest {
     private val cfg = TargetDisplay.Config()
-    private fun t(hex: String, distNm: Double, altFt: Double?, sev: Severity = Severity.NONE) = AlertEngine.TargetView(
+    private fun t(hex: String, distNm: Double, altFt: Double?, tier: Tier = Tier.NONE) = AlertEngine.TargetView(
         hex = hex, displayId = hex, distNm = distNm, bearingDeg = 0.0, dvFt = null, altEstimated = false, trend = null,
-        severity = sev, predictive = false, cpa = null, zones = emptyList(), ageSec = 1.0, sources = setOf("cloud"),
+        tier = tier, prediction = null, zones = emptyList(), ageSec = 1.0, sources = setOf("cloud"),
         groundModeAirborne = altFt == null, altFt = altFt)
     private fun shown(list: List<AlertEngine.TargetView>, aroundAircraft: Boolean) =
         TargetDisplay.filter(list, aroundAircraft, cfg).map { it.hex }.toSet()
@@ -29,9 +29,9 @@ class TargetDisplayTest {
     }
 
     @Test fun anAlertingAircraftIsNeverHidden() {
-        val l = listOf(t("warn-far", 12.0, 5000.0, Severity.WARNING), t("adv-high", 4.0, 19_000.0, Severity.ADVISORY),
-            t("info-far", 12.0, 5000.0, Severity.INFO))
-        assertEquals(setOf("warn-far", "adv-high"), shown(l, aroundAircraft = true))
+        val l = listOf(t("warn-far", 12.0, 5000.0, Tier.WARNING), t("adv-high", 4.0, 19_000.0, Tier.ADVISORY),
+            t("track-far", 12.5, 5000.0, Tier.TRACK), t("none-far", 12.0, 5000.0))
+        assertEquals(setOf("warn-far", "adv-high", "track-far"), shown(l, aroundAircraft = true))
     }
 
     @Test fun settingsChangeTheNumbers() {

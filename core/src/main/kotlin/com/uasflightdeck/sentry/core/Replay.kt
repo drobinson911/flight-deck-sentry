@@ -55,6 +55,8 @@ object DemoReplayFixture {
     const val PDT_OFFSET_MS = -7 * 3600_000L
     const val HEX = "a479ef"
     const val CALLSIGN = "N388KM"
+    /** The synthetic crossing variant's climb rate through the drone's altitude. */
+    const val CROSSING_FPM = 500.0
 
     /**
      * The drone's DroneSense-style callsign in the replay. The recorded DEMO-1
@@ -84,7 +86,13 @@ object DemoReplayFixture {
      *   mode 11:50:42-11:54:42). false = the merged track with the truck's
      *   Mode S pressure altitude.
      */
-    fun load(droneJson: String, n388Json: String, tfrJson: String, cloudView: Boolean = false): ReplayScenario {
+    /**
+     * @param crossing the SYNTHETIC "crossing" variant (v0.4.0), to exercise COLLISION RISK: N388KM's real horizontal
+     *   track, but the drone held level at its altitude at the closest approach, and N388KM given a GPS altitude that
+     *   climbs at [CROSSING_FPM] through the drone's altitude exactly at the closest approach (160 ft below it
+     *   19.2 s before). Its reported vertical rate is +500 fpm.
+     */
+    fun load(droneJson: String, n388Json: String, tfrJson: String, cloudView: Boolean = false, crossing: Boolean = false): ReplayScenario {
         // demo_drone.json: {"results":[...]} possibly wrapped in a one-element list
         val u = Parsers.parse(droneJson)
         val uObj = (u as? JsonArray)?.firstOrNull().obj() ?: u.obj()
@@ -98,7 +106,13 @@ object DemoReplayFixture {
                 posTimeMs = r.num("ts")?.toLong() ?: return@mapNotNull null,
                 source = OwnshipSource.REPLAY,
             )
-        }.sortedBy { it.posTimeMs }
+        }.sortedBy { it.posTimeMs }.let { rows ->
+            if (!crossing) rows else {
+                val level = rows.lastOrNull { it.posTimeMs <= CLOSEST_MS }?.altMslFt ?: rows.first().altMslFt
+                rows.map { it.copy(altMslFt = level) }
+            }
+        }
+        val levelFt = own.lastOrNull { it.posTimeMs <= CLOSEST_MS }?.altMslFt
 
         val n = Parsers.parse(n388Json).arr().orEmpty().mapNotNull { el ->
             val r = el.obj() ?: return@mapNotNull null
@@ -113,7 +127,12 @@ object DemoReplayFixture {
                 posTimeMs = r.num("ts")?.toLong() ?: return@mapNotNull null,
                 sources = setOf("replay"),
             )
-        }.sortedBy { it.posTimeMs }
+        }.sortedBy { it.posTimeMs }.let { rows ->
+            if (!crossing || levelFt == null) rows else rows.map {
+                it.copy(altBaroFt = null, altGeomFt = levelFt + CROSSING_FPM * (it.posTimeMs - CLOSEST_MS) / 60_000.0,
+                    vsFpm = CROSSING_FPM, reportsGround = false)
+            }
+        }
 
         val tfr = Parsers.parse(tfrJson).obj()
         val ring = tfr?.get("verts").arr().orEmpty().mapNotNull { v ->
@@ -124,7 +143,11 @@ object DemoReplayFixture {
             floor = AltLimit.SURFACE, ceiling = AltLimit(8500.0, AltRef.MSL))
 
         return ReplayScenario(
-            title = "Demo encounter: DEMO-1 vs N388KM" + if (cloudView) " (public-feed view)" else "",
+            title = "Demo encounter: DEMO-1 vs N388KM" + when {
+                crossing -> " (SYNTHETIC crossing variant)"
+                cloudView -> " (public-feed view)"
+                else -> ""
+            },
             ownshipId = "DEMO-1", ownshipName = DRONE_CALLSIGN,
             ownRows = own, traffic = listOf(n), zones = listOf(zone),
             startMs = START_MS, endMs = END_MS,

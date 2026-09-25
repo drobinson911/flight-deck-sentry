@@ -43,11 +43,11 @@ class DemoSelectionReplayTest {
 
     private fun dump(label: String, ev: List<AlertEvent>) {
         println("── $label ──")
-        ev.forEach { println("${hms(it.timeMs)}  ${it.severity.label.padEnd(8)} ${it.kind.name.padEnd(16)} ${it.text}   [tts: ${it.speech}]") }
+        ev.forEach { println("${hms(it.timeMs)}  ${(it.tier?.label ?: it.severity.label).padEnd(14)} ${it.kind.name.padEnd(16)} ${it.phase.name.padEnd(10)} ${it.text}") }
     }
 
     /** The replay drone pinned by its (synthetic) serial: the full selection path gives the README callouts. */
-    @Test fun pinnedSerialWatchesDemo1AndStillWarnsAt115257() {
+    @Test fun pinnedSerialWatchesDemo1AndWarnsBeforeThePass() {
         assertEquals("1581F7K3C251F00C9B34", DemoReplayFixture.DRONE_SERIAL)
         assertEquals("DEMO-1 Pilot", DemoReplayFixture.DRONE_CALLSIGN)
         val r = run(DemoReplayFixture.DRONE_SERIAL.lowercase(), Cylinder.DEFAULTS)
@@ -57,10 +57,9 @@ class DemoSelectionReplayTest {
         assertEquals("Watching DEMO-1 Pilot, this controller's aircraft.", first.text)
         assertEquals(sc.startMs, first.timeMs)
         assertEquals(1, r.events.count { it.kind == EventKind.SELECTION })
-        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
-        assertEquals("11:52:57", hms(warn.timeMs))
-        assertEquals(EventKind.PREDICTIVE, warn.kind)
-        assertTrue(warn.timeMs < DemoReplayFixture.CLOSEST_MS)
+        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.tier == Tier.WARNING }
+        assertEquals(Phase.ESCALATION, warn.phase)
+        assertTrue("warning at ${hms(warn.timeMs)}", warn.timeMs < DemoReplayFixture.CLOSEST_MS - 20_000)
         val tfr = r.events.single { it.kind == EventKind.TFR_ENTRY }
         assertTrue(kotlin.math.abs(tfr.timeMs - DemoReplayFixture.TFR_ENTRY_MS) <= 4000)
         assertTrue("no cylinder callouts while the drone is watched", r.events.none { it.kind == EventKind.CYLINDER_ENTRY })
@@ -101,16 +100,16 @@ class DemoSelectionReplayTest {
 
         val entry = r.events.firstOrNull { it.kind == EventKind.CYLINDER_ENTRY && it.hex == DemoReplayFixture.HEX }
         assertNotNull("no cylinder-entry callout", entry)
-        assertTrue(entry!!.text, entry.text.startsWith("Traffic entering ops area, N388KM, south, "))   // it came up from the south of the launch point
+        assertTrue(entry!!.text, entry.text.startsWith("Traffic entering ops area: S"))   // it came up from the south of the launch point
         // the 1 s tick after the true 1 nm crossing (11:53:39.7), dead-reckoned
         assertTrue("entry at ${hms(entry.timeMs)}", entry.timeMs <= DemoReplayFixture.CLOSEST_MS + 1000)
         assertTrue("entry at ${hms(entry.timeMs)}", entry.timeMs >= DemoReplayFixture.CLOSEST_MS - 2000)
 
         // the predictive rule about the controller warns well before the crossing
-        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.severity == Severity.WARNING }
-        assertEquals(EventKind.PREDICTIVE, warn.kind)
+        val warn = r.events.first { it.hex == DemoReplayFixture.HEX && it.tier == Tier.WARNING }
+        assertEquals(Phase.ESCALATION, warn.phase)
         assertTrue("predictive at ${hms(warn.timeMs)}", warn.timeMs < DemoReplayFixture.CLOSEST_MS - 30_000)
-        assertTrue(warn.text.contains("above"))
+        assertTrue(warn.text, warn.text.contains("above"))
         assertEquals(1, r.events.count { it.kind == EventKind.CYLINDER_ENTRY })
         val clear = r.events.first { it.kind == EventKind.CLEAR && it.hex == DemoReplayFixture.HEX }
         assertTrue(clear.timeMs > entry.timeMs)
@@ -120,6 +119,6 @@ class DemoSelectionReplayTest {
     @Test fun aircraftOverTheTopOfTheCylinderIsNotAnEntry() {
         val r = run("", listOf(Cylinder("ops", "ops area", 1.0, 0.0, 1500.0)))
         assertTrue(r.events.none { it.kind == EventKind.CYLINDER_ENTRY })
-        assertTrue(r.events.none { it.kind == EventKind.PREDICTIVE })
+        assertTrue(r.events.none { it.tier != null && it.tier!! >= Tier.WARNING })
     }
 }

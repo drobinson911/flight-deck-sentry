@@ -138,65 +138,165 @@ enum class Severity(val rank: Int, val label: String) {
     WARNING(4, "warning");
 }
 
+/**
+ * The traffic alert tiers (v0.4.0), lowest to highest. "Highest wins" and every escalation fires at once.
+ *  - ADVISORY: actually inside the advisory ring (3 nm) and the protected volume.
+ *  - TRACK: TRACK ALERT, predicted to pass within 1 nm (+corridor) within 180 s, inside the volume at that time.
+ *  - CAUTION: actually inside the caution ring (1 nm) and the volume.
+ *  - WARNING: predicted within 0.5 nm (+corridor) within 90 s inside the volume, or actually inside the 0.5 nm ring.
+ *  - COLLISION: COLLISION RISK, predicted within 500 ft / 300 ft within 60 s, or crossing the drone's altitude
+ *    while inside 0.5 nm within the next 60 s.
+ * TRACK sits between advisory and caution: a predicted conflict outranks mere proximity, and an aircraft on a
+ * TRACK ALERT that then enters the 1 nm ring still escalates (and sounds).
+ */
+enum class Tier(val rank: Int, val label: String, val severity: Severity) {
+    NONE(0, "none", Severity.NONE),
+    ADVISORY(1, "advisory", Severity.ADVISORY),
+    TRACK(2, "track alert", Severity.CAUTION),
+    CAUTION(3, "caution", Severity.CAUTION),
+    WARNING(4, "warning", Severity.WARNING),
+    COLLISION(5, "collision risk", Severity.WARNING);
+}
+
 enum class EventKind {
-    TFR_ENTRY, GEOFENCE_ENTRY, CYLINDER_ENTRY, PROXIMITY, PREDICTIVE, CLEAR, TRACK_LOST,
-    /** "N388KM passing, diverging": said once when an aircraft starts opening after a close pass (v0.3.5). */
+    TFR_ENTRY, GEOFENCE_ENTRY, CYLINDER_ENTRY,
+    /** A traffic tier change or cadence repeat for one aircraft: see [AlertEvent.phase]. */
+    TRAFFIC,
+    /** Range opening after a close pass: "PASSING · diverging". Sound only after a WARNING / COLLISION RISK. */
     PASSING,
+    /** A TRACK ALERT whose prediction left the corridor for >= 5 s: banner update, no sound. */
+    NO_LONGER_FACTOR,
+    CLEAR, TRACK_LOST,
     OWNSHIP_ACQUIRED, OWNSHIP_LOST, OWNSHIP_REGAINED, OWNSHIP_MANUAL,
     TRAFFIC_STALE, TRAFFIC_RESTORED,
     SOURCE_LOST, SOURCE_REGAINED,
-    /** Drone selection changed (callsign / serial / controller fallback). */
+    /** Drone selection changed (bound aircraft acquired / waiting for it / controller). */
     SELECTION,
     CONTROLLER_GPS_LOST, CONTROLLER_GPS_REGAINED,
+    INTERNET_LOST, INTERNET_REGAINED,
+    PREFLIGHT,
+    /** "Sentry sounds on": Quiet 5 min ran out. */
+    SOUNDS_ON,
     TEST, SYSTEM,
 }
 
+/** What a traffic event is, for the cadence and the output (sound / popup). */
+enum class Phase {
+    /** Tier went up: full sound, vibrate, heads-up POPUP. Never rate limited. */
+    ESCALATION,
+    /** Same tier, the cadence timer ran out: short sound (or banner-only), silent banner update. */
+    REPEAT,
+    /** Banner-only refresh at the cadence (TRACK every 30 s, advisory): no sound. */
+    UPDATE,
+    /** Tier went down: silent banner update. */
+    DOWNGRADE,
+    /** Anything else (passing, clear, zone entry, housekeeping). */
+    OTHER,
+}
+
+/** The sound a traffic event asks for, before mutes and alert style: the level's full sound, its short variant, or none. */
+enum class Cue { FULL, SHORT, NONE }
+
 /**
- * One callout. [text] is what the screen shows, [speech] what TTS says (the
- * same content, with ids spelled so TTS reads them letter by letter).
+ * One alert. [text] is the one-line form for the log and the on-screen "Last alerts"; [banner] the four-line
+ * heads-up text for traffic events. [cue] and [phase] are the engine's cadence decision; the app applies mutes
+ * and the alert style on top ([OutputPlanner]).
  */
 data class AlertEvent(
     val timeMs: Long,
     val kind: EventKind,
     val severity: Severity,
     val text: String,
-    val speech: String = text,
     val hex: String? = null,
-    /** Distance to the aircraft when the callout was made (nm); orders two aircraft at the same severity, closer first. */
+    /** Distance to the aircraft when the alert was made (nm); orders two aircraft at the same tier, closer first. */
     val distNm: Double? = null,
+    val tier: Tier? = null,
+    val phase: Phase = Phase.OTHER,
+    val cue: Cue = Cue.NONE,
+    /** Re-post the banner as a heads-up. Only escalations and zone entries pop up. */
+    val popup: Boolean = false,
+    val banner: BannerText? = null,
+    /** Best estimate of when the tier condition became true (interpolated between ticks), for the latency metric. */
+    val crossedAtMs: Long? = null,
+    /** A reminder of something already alerted (e.g. "still lost"): screen only. */
+    val repeat: Boolean = false,
+    /** The worst (lowest) closeness score S of this aircraft so far this pass ([Closeness]). */
+    val closenessS: Double? = null,
 )
 
-/** Every tunable in one place. Defaults are the spec's defaults. */
+/**
+ * The fleet simulation's incident "closeness score", so field data is scored the same way:
+ * S = sqrt((h / 2000 ft)^2 + (v / 500 ft)^2), h = horizontal and v = vertical separation now. Lower is closer
+ * (S <= 1 is inside the 2000 ft / 500 ft ellipsoid). Unknown altitude scores on h alone (v = 0: fail wide).
+ */
+object Closeness {
+    fun score(hFt: Double, vFt: Double?): Double = kotlin.math.sqrt((hFt / 2000.0).let { it * it } + ((vFt ?: 0.0) / 500.0).let { it * it })
+}
+
+/** Every tunable in one place. Defaults are the owner's plan (2026-09-24). */
 data class SentryConfig(
     val advisoryNm: Double = 3.0,
     val cautionNm: Double = 1.0,
     val warningNm: Double = 0.5,
     /**
-     * The protected volume around the drone runs from the SURFACE up to this many feet above the drone
-     * (owner, v0.3.3: "we never want anything flying under us"). There is no lower limit; unknown altitude
-     * counts as inside. Replaces the symmetric ±2,000 ft band of 0.1-0.3.2.
+     * The protected volume around the drone runs from the SURFACE up to this many feet above the drone.
+     * There is no lower limit; unknown altitude counts as inside. (2,000 in 0.3.3-0.3.5; 1,500 from 0.4.0.)
      */
-    val ceilingAboveFt: Double = 2000.0,
+    val ceilingAboveFt: Double = 1500.0,
     val baroCorrectionFt: Double = 300.0,
-    val cpaHorizonSec: Double = 60.0,
-    /** A zone (TFR, geofence, cylinder) re-entered within this many seconds is not announced again. */
+
+    // ── prediction (time to closest approach) ──
+    // Fleet simulation 2026-09-24 (86 real flights): track 120 s / warning 60 s with NO corridor widening had 67 %
+    // fewer false alarms than 180/90 + 5 deg, warnings a median 69 s before closest approach, no missed conflict.
+    val trackSec: Double = 120.0,
+    val trackMissNm: Double = 1.0,
+    val warningSec: Double = 60.0,
+    val warningMissNm: Double = 0.5,
+    val collisionSec: Double = 60.0,
+    val collisionMissFt: Double = 500.0,
+    val collisionVertFt: Double = 300.0,
+    /** The horizontal miss threshold widens with distance: threshold + distance x tan(corridorDeg). 0 = off (default). */
+    val corridorDeg: Double = 0.0,
+    /** A predicted tier holds this long after its prediction leaves the corridor (while not diverging). */
+    val predictionHoldSec: Double = 5.0,
+    /** Once a predicted tier is up, its time limit is extended by this much (its miss limit by [ringHysteresisNm]). */
+    val predictionHysteresisSec: Double = 10.0,
+    /** Stepping back up to a tier already alerted this pass within this many seconds is not re-alerted (anti-flap). */
+    val rearmSec: Double = 15.0,
+    /** Drone slower than this is treated as stationary. */
+    val droneStationaryKt: Double = 1.0,
+
+    // ── cadence ([Cadence]) ──
+    val trackUpdateSec: Double = 30.0,
+    val advisoryRepeatSec: Double = 30.0,
+    val cautionRepeatSec: Double = 20.0,
+    /** WARNING, converging: 1-3 nm (and beyond). */
+    val warnFarSec: Double = 20.0,
+    /** WARNING, converging: 0.5-1 nm. */
+    val warnNearSec: Double = 12.0,
+    /** WARNING, converging: inside 0.5 nm or tCPA < [warnCloseCpaSec]. */
+    val warnCloseSec: Double = 6.0,
+    val warnCloseCpaSec: Double = 30.0,
+    /** No repeat of one aircraft faster than this (COLLISION RISK has its own tone rate). */
+    val minRepeatSec: Double = 6.0,
+    val collisionRepeatSec: Double = 3.0,
+    /** Quiet alert style = 2.0 (every interval doubled). */
+    val cadenceScale: Double = 1.0,
+    /** Advisory makes a sound (the Loud alert style only). Default: advisory is banner-only. */
+    val advisorySound: Boolean = false,
+
+    /** A zone (TFR, geofence, cylinder) re-entered within this many seconds is not alerted again. */
     val reannounceSec: Double = 20.0,
-    /** Callout cadence (v0.3.5, owner-approved; see [Cadence]). Advisory-level repeats stay at 30 s. */
-    val advisoryReannounceSec: Double = 30.0,
-    /** Caution/warning between the caution ring (1 nm) and the advisory ring (3 nm), not diverging. */
-    val midRepeatSec: Double = 20.0,
-    /** Between the warning ring (0.5 nm) and the caution ring (1 nm), not diverging. */
-    val nearRepeatSec: Double = 12.0,
-    /** Inside the warning ring, or a predicted pass inside it within [closeCpaSec]: short sentence. */
-    val closeRepeatSec: Double = 6.0,
-    val closeCpaSec: Double = 30.0,
-    /** Opening after a close pass, still inside the advisory ring. */
-    val openingRepeatSec: Double = 45.0,
     val staleTargetSec: Double = 30.0,
     val ownshipLostSec: Double = 15.0,
     val trafficStaleSec: Double = 30.0,
-    /** Only TFRs whose edge is within this distance of the drone are watched. */
+    /** Only TFRs whose edge is within this distance of the drone are watched (shown). */
     val tfrRelevanceNm: Double = 10.0,
+    /**
+     * Zone ENTRY alerts only for zones that contain the drone or whose edge is within this distance of it (fleet
+     * simulation: 100 of 101 zone alerts in 0.3.5 were a TFR 5-9 nm from the drone).
+     */
+    val zoneAlertNm: Double = 2.0,
     /** Dead-reckon a target at most this far past its last position report. */
     val maxExtrapolationSec: Double = 10.0,
     /** A "ground" report faster than this is treated as AIRBORNE, altitude unknown. */
@@ -207,8 +307,10 @@ data class SentryConfig(
     val ringHysteresisNm: Double = 0.2,
     /** Hysteresis on the ceiling above the drone once alerting (so a target at the ceiling doesn't flap). */
     val bandHysteresisFt: Double = 200.0,
-    /** Reminder cadence while the drone position stays lost. */
+    /** Reminder cadence while the drone position stays lost (screen only). */
     val ownshipLostReminderSec: Double = 120.0,
 ) {
     fun ringsValid(): Boolean = warningNm > 0 && cautionNm >= warningNm && advisoryNm >= cautionNm
+    fun predictionValid(): Boolean = trackSec >= warningSec && warningSec >= collisionSec && collisionSec > 0 &&
+        trackMissNm >= warningMissNm && warningMissNm > 0 && collisionMissFt > 0 && collisionVertFt > 0
 }
