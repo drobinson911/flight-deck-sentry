@@ -49,7 +49,17 @@ object Banner {
     fun miles(nm: Double): String = if (nm < 0.1) dist(nm) else String.format(US, "%.1f mi", (nm * 10).roundToInt() / 10.0)
 
     /** m:ss, "2:58", "0:09". */
-    fun clock(sec: Double): String { val s = maxOf(0, sec.roundToInt()); return "${s / 60}:${(s % 60).toString().padStart(2, '0')}" }
+    /** 0.4.2 (owner): durations in words, "43 s" under a minute, "1 min 28 s", "2 min" on the minute, "1 h 5 min". */
+    fun clock(sec: Double): String = duration(sec)
+
+    fun duration(sec: Double): String {
+        val s = maxOf(0L, sec.roundToLong())
+        return when {
+            s < 60 -> "$s s"
+            s < 3600 -> if (s % 60 == 0L) "${s / 60} min" else "${s / 60} min ${s % 60} s"
+            else -> if ((s % 3600) / 60 == 0L) "${s / 3600} h" else "${s / 3600} h ${(s % 3600) / 60} min"
+        }
+    }
 
     /** "300 below", "1,200 above", "same alt", "alt unknown"; "≈" when the altitude is estimated (baro + correction). */
     fun vertical(dvFt: Double?, estimated: Boolean = false): String {
@@ -135,6 +145,12 @@ object Banner {
     // ── whole banners ─────────────────────────────────────────────────────
     fun traffic(v: AlertEngine.TargetView): BannerText =
         BannerText(title(v.tier, v.displayId, v.type), line2(v), line3(v), if (v.tier == Tier.COLLISION || v.prediction?.converging == true) hint(v) else null)
+
+    /**
+     * The banner for an aircraft's CURRENT state, used by the per-second in-place refresh: PASSING once it has passed
+     * and is not turning back (0.4.2: the 0.5 nm ring backstop used to re-title it "⚠ WARNING · Not closing").
+     */
+    fun forView(v: AlertEngine.TargetView): BannerText = if (v.passing) passing(v, v.closestNm) else traffic(v)
 
     fun passing(v: AlertEngine.TargetView, closestNm: Double?): BannerText =
         BannerText("● PASSING · ${v.displayId}", line2(v), "Diverging" + (closestNm?.let { " · closest was ${dist(it)}" } ?: ""))

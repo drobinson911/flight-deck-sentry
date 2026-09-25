@@ -16,14 +16,29 @@ class OutputsTest {
 
     private fun plan(vararg e: AlertEvent, style: AlertStyle = AlertStyle.STANDARD) = OutputPlanner.plan(e.toList(), MuteBook(), style, T)
 
-    @Test fun advisoryIsBannerOnlyByDefault() {
+    /** 0.4.2 owner decision: in the default Standard style EVERY traffic alert sounds, advisory included. */
+    @Test fun standardStyleEveryAlertSoundsAdvisoryIsOneSoftTone() {
+        assertEquals(AlertStyle.STANDARD, AlertStyle.values().first())
+        for (t in listOf(Tier.ADVISORY, Tier.TRACK, Tier.CAUTION, Tier.WARNING, Tier.COLLISION))
+            assertTrue("$t entry must sound in Standard", plan(tr(t)).single().sounds)
         val o = plan(tr(Tier.ADVISORY)).single()
-        assertFalse(o.sounds); assertFalse(o.vibrates)
-        assertEquals(OutputPlanner.BannerAction.POPUP, o.banner)                      // the banner still pops up
-        assertEquals("advisory is banner-only", o.suppressed)
-        assertTrue(plan(tr(Tier.ADVISORY), style = AlertStyle.LOUD).single().sounds)  // only the Loud style sounds it
-        assertTrue(plan(tr(Tier.CAUTION)).single().sounds)                              // caution keeps its sound
-        assertFalse(plan(tr(Tier.ADVISORY), style = AlertStyle.QUIET).single().sounds)
+        assertEquals(Cue.SHORT, o.cue); assertTrue(o.vibrates)                        // soft tone + short vibrate
+        assertArrayEquals(longArrayOf(0, 150), SoundLevel.ADVISORY.vibration)
+        assertEquals(OutputPlanner.BannerAction.POPUP, o.banner)
+        // Repeats stay banner-only (the engine asks for none unless Loud; the planner enforces it too).
+        val rep = plan(tr(Tier.ADVISORY, Phase.REPEAT, Cue.SHORT)).single()
+        assertFalse(rep.sounds); assertEquals("advisory repeats are banner-only", rep.suppressed)
+        assertTrue(plan(tr(Tier.CAUTION)).single().sounds)                              // caution unchanged
+    }
+
+    @Test fun quietStyleAdvisoryIsBannerOnlyLoudSoundsRepeats() {
+        val q = plan(tr(Tier.ADVISORY), style = AlertStyle.QUIET).single()
+        assertFalse(q.sounds); assertFalse(q.vibrates)
+        assertEquals("quiet style: advisory is banner-only", q.suppressed)
+        assertEquals(OutputPlanner.BannerAction.POPUP, q.banner)                       // the banner still pops up
+        val l = plan(tr(Tier.ADVISORY), style = AlertStyle.LOUD).single()
+        assertTrue(l.sounds); assertEquals(Cue.FULL, l.cue)
+        assertTrue(plan(tr(Tier.ADVISORY, Phase.REPEAT, Cue.SHORT), style = AlertStyle.LOUD).single().sounds)
     }
 
     @Test fun quietStyleMakesCautionBannerOnly() {
@@ -58,6 +73,9 @@ class OutputsTest {
         assertNull(lv(EventKind.SELECTION, "Waiting for this controller's aircraft."))
         assertEquals(SoundLevel.BOUND, lv(EventKind.OWNSHIP_LOST)); assertNull(lv(EventKind.OWNSHIP_LOST, repeat = true))
         assertEquals(SoundLevel.PREFLIGHT, lv(EventKind.PREFLIGHT)); assertEquals(SoundLevel.PREFLIGHT, lv(EventKind.SOUNDS_ON))
+        assertEquals(SoundLevel.BOUND, lv(EventKind.RESTARTED))                        // "Sentry restarted": housekeeping sound + vibrate
+        val r = plan(AlertEvent(T, EventKind.RESTARTED, Severity.CAUTION, RestartPolicy.RESTARTED)).single()
+        assertTrue(r.sounds && r.vibrates); assertEquals(OutputPlanner.BannerAction.POPUP, r.banner)
         for (k in listOf(EventKind.SOURCE_LOST, EventKind.TRAFFIC_STALE, EventKind.CONTROLLER_GPS_LOST, EventKind.SYSTEM)) assertNull(lv(k))
     }
 
@@ -68,7 +86,8 @@ class OutputsTest {
         assertArrayEquals(longArrayOf(0, 500, 200, 500, 200, 500), SoundLevel.COLLISION.vibration)
         for (h in listOf(SoundLevel.INTERNET, SoundLevel.BOUND, SoundLevel.PREFLIGHT)) assertArrayEquals(longArrayOf(0, 100), h.vibration)
         assertTrue(plan(tr(Tier.WARNING)).single().vibrates)
-        assertFalse(plan(tr(Tier.ADVISORY)).single().vibrates)                        // banner-only = no vibrate either
+        assertTrue(plan(tr(Tier.ADVISORY)).single().vibrates)                         // Standard advisory entry: short vibrate
+        assertFalse(plan(tr(Tier.ADVISORY), style = AlertStyle.QUIET).single().vibrates) // banner-only = no vibrate either
     }
 
     @Test fun streamsAndPlayback() {

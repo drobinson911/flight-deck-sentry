@@ -5,7 +5,9 @@ while **DroneSense** flies the drone, and it **notifies**: a sound from the cont
 heads-up banner when a crewed aircraft is predicted to come close to the drone, gets close, or enters a TFR/geofence
 at the drone. The pilot then looks at AirSense / ForeFlight and acts. No map, no voice, never in DroneSense's way.
 
-Version **0.4.1** (0.4.0, the owner's agreed plan of 2026-09-24, with the replay renamed to a neutral demo encounter).
+Version **0.4.2** (0.4.0, the owner's agreed plan of 2026-09-24; 0.4.1 renamed the replay to a neutral demo encounter;
+0.4.2 adds the Resources readout, keeps PASSING banners PASSING, sounds every alert in Standard, stays armed
+across restarts, and adds Share log).
 Everything below describes 0.4.x; the short history at the end says what came before.
 
 ## Why it exists
@@ -20,13 +22,13 @@ Replaying that recorded encounter through 0.4.0 (the demo drone DEMO-1 pinned as
 | Replay time (PDT) | Tier | Sound | Banner (title · where · prediction · hint) |
 |---|---|---|---|
 | 11:51:50 | bound | bound aircraft | "Watching DEMO-1 Pilot, this controller's aircraft." |
-| 11:52:14 | **TRACK** | track, popup | ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · ≈600 above · Passing within 1.0 mi in 1:19 · Clear: move NW |
-| 11:52:44 | TRACK | none (banner update) | … SW 2.5 mi · Passing within 0.9 mi in 0:50 |
-| 11:52:57 | **WARNING** | warning, popup | ⚠ WARNING · N388KM · SW 1.9 mi · 155 kt · ≈100 below · Closest 2,700 ft in 0:40 · Clear: move NW |
-| 11:53:03 · :14 · :20 · :26 · :32 · :38 | WARNING | short warning | the same banner, updated silently (1.6 mi … 1,300 ft; "Closest 1,300 ft in 0:01") |
+| 11:52:14 | **TRACK** | track, popup | ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · ≈600 above · Passing within 1.0 mi in 1 min 19 s · Clear: move NW |
+| 11:52:44 | TRACK | none (banner update) | … SW 2.5 mi · Passing within 0.9 mi in 50 s |
+| 11:52:57 | **WARNING** | warning, popup | ⚠ WARNING · N388KM · SW 1.9 mi · 155 kt · ≈100 below · Closest 2,700 ft in 40 s · Clear: move NW |
+| 11:53:03 · :14 · :20 · :26 · :32 · :38 | WARNING | short warning | the same banner, updated silently (1.6 mi … 1,300 ft; "Closest 1,300 ft in 1 s") |
 | 11:53:23 | (TFR 0/0000 entry) | none: already a warning | logged: "Traffic entering TFR 0/0000: SW 4,700 ft · 160 kt · ≈300 below" |
 | *11:53:40* | PASSING | passing | ● PASSING · N388KM · SE 1,200 ft · Diverging · closest was 1,200 ft *(the real closest approach, 0.24 nm)* |
-| 11:53:56, 11:54:08 | caution, advisory | none | step-downs, silent |
+| 11:53:41–11:54:53 | (warning → caution → advisory rings) | none | stays **● PASSING · N388KM · Diverging**, updated in place (0.4.2) |
 | 11:54:54 | CLEAR | none | banner removed ("Outside 3.0 mi") |
 
 The first sound is **86 s before the pass**, the warning **43 s before**. The same data with N388KM's altitude as the
@@ -98,14 +100,28 @@ before closest approach, and no missed true conflict. The owner's first plan (18
 | WARNING | full sound + popup | ≥ 1 mi: 20 s · 0.5–1 mi: 12 s · < 0.5 mi or tCPA < 30 s: **6 s** (never faster) | short, softer sound + silent banner update |
 | CAUTION | full sound + popup | every 20 s | short sound + silent banner update |
 | TRACK ALERT | one sound + popup | banner update every 30 s | banner only |
-| advisory | **banner only** (popup, no sound) | banner update every 30 s | banner only |
+| advisory | **one soft tone** (short, 60 % volume) + short vibrate + popup (0.4.2) | banner update every 30 s | banner only |
 
 - **Diverging:** all repeats stop. One **PASSING** sound when the range opens after a WARNING / COLLISION RISK
   (silent after lower tiers), then **CLEAR** (no sound, banner removed) outside 3 nm or outside the volume.
-- Steps down are silent. Turning back toward the drone re-triggers by tier.
-- **Alert style:** Standard (above) / Quiet (every interval doubled, caution banner-only too; the collision tone is
-  never slowed) / Loud (advisory sounds too). Fleet simulation: 87 of 98 false alarms under 0.3.5 were the 3 nm
-  advisory ring alone, hence advisory is banner-only unless Loud.
+- From PASSING to CLEAR the banner stays **● PASSING · <id> · Diverging** (grey, silent, updated in place), even
+  while he is still inside the 0.5 nm ring (0.4.1 re-titled it "⚠ WARNING · Not closing"). Steps down are silent.
+  Turning back toward the drone (range closing again) re-triggers by tier: full sound + popup (`PassingTitleTest`).
+- **What makes a sound, by alert style** (0.4.2, owner decision: the pilot may be on an automated mission in
+  DroneSense, not holding the controller, so a banner-only alert can be missed):
+
+  | Alert | Standard (default) | Quiet | Loud |
+  |---|---|---|---|
+  | advisory (3 mi) entry | soft tone + short vibrate | banner only | full sound + vibrate |
+  | advisory repeats | banner only | banner only | short sound |
+  | TRACK ALERT | sound (repeats: banner) | sound (repeats: banner) | sound (repeats: banner) |
+  | caution | sound + repeats | banner only | sound + repeats |
+  | warning | sound + repeats | sound + repeats (intervals × 2) | sound + repeats |
+  | COLLISION RISK | 3 s tone | 3 s tone (never slowed) | 3 s tone |
+  | PASSING (after warning / collision) | sound | sound | sound |
+
+  In Standard every traffic alert sounds. Quiet is 0.4.0–0.4.1's advisory behaviour (fleet simulation: 87 of 98
+  false alarms under 0.3.5 were the 3 nm advisory ring alone) with every repeat interval doubled.
 
 ### Sounds, vibration, banners
 
@@ -128,7 +144,7 @@ before closest approach, and no missed true conflict. The owner's first plan (18
   ```
   ▲ TRACK · N388KM Cessna          ⚠ WARNING · N388KM              ‼ COLLISION RISK · N388KM
   SW 7.9 mi · 160 kt · 300 below, climbing
-  Passing within 0.3 mi in 2:58    Closest 2,700 ft in 1:29        160 below, climbing through your altitude · 12 s
+  Passing within 0.3 mi in 2 min 58 s    Closest 2,700 ft in 1 min 29 s        160 below, climbing through your altitude · 12 s
   Clear: move NW ↑
   ```
 
@@ -147,7 +163,7 @@ before closest approach, and no missed true conflict. The owner's first plan (18
   Got it / Ignore. A body tap only expands; it never opens the app. Every action is logged with its time and shown
   in Last alerts; mutes show in the target list ("MUTED 47 s").
 - **Status notification** (the foreground service): "Bound to 1581F7K3C251F00C9B34 · DEMO-1 Pilot · 3 targets ·
-  sounds on", plus "N388KM muted 47 s", "Quiet 4:12 left" or "Internet offline". Actions **Disarm** and **Open
+  sounds on", plus "N388KM muted 47 s", "Quiet 4 min 12 s left" or "Internet offline". Actions **Disarm** and **Open
   Sentry**, the only way into the app from a notification.
 
 ### Housekeeping alerts (the only non-traffic sounds)
@@ -166,7 +182,7 @@ failure, and the result as a housekeeping alert.
 ### Low power
 
 Bound aircraft on the pad or absent: cloud traffic and the drone feed every **5 s**; airborne: **2 s / 2 s**. The
-station link stays 1 s when enabled. The rates in use are shown in Sources ("Polling").
+Overwatch station link stays 1 s when enabled. The rates in use are shown in Sources ("Polling").
 
 ### Alert latency
 
@@ -177,27 +193,95 @@ demo replays, by that estimate and against a 10 Hz run of the same data. On the 
 ## Main screen
 
 Status header (armed / bound / waiting / the top alert) · **Sources** (feeds with ages, internet, poll rates, sounds,
-vibration) · **Targets** (tier, CPA time and miss, MUTED countdown, zones) · **Last alerts** (with the sound played or
+vibration, **Resources**) · **Targets** (tier, CPA time and miss, MUTED countdown, zones) · **Last alerts** (with the sound played or
 why not, and pilot actions) · compass rose · pinned bar **ARM / DISARM · Pre-flight · Settings**.
 
 ## Settings (in this order)
 
 Rings & volume (+ targets shown) → controller cylinders → this controller's aircraft → prediction (120 / 60 / 60 s,
 1 nm / 0.5 nm / 500 ft / 300 ft, corridor 0°) → cadence & alert style & banner duration & mute timings → sounds &
-vibration → fleet token / station / TFR zones / geofences / background / app update → replay. Settings save
+vibration → fleet token / Overwatch station / TFR zones / geofences / background (Resume armed after power-off) →
+**Resources** → **Diagnostics (Share log)** → app update → replay. Settings save
 themselves (0.3.4): about 0.4 s after typing stops; an invalid value turns red and the last valid one is kept. The
 three prediction times must be ordered (track ≥ warning ≥ collision) and the track miss ≥ the warning miss.
+
+## Armed stays armed (0.4.2)
+
+Owner: Sentry stays armed until the pilot **DISARMs** it or **swipes it away** from the app switcher.
+
+| What happens | Sentry does | The pilot sees / the log says |
+|---|---|---|
+| DISARM | stops, flight summary logged | "DISARMED" |
+| Swiped away from Recents (armed or replaying) | disarms, cancels banners, releases the wake lock, stops; **never restarted** | "Disarmed by user (app closed)" |
+| Crash or system kill (low memory) | the system restarts the service (`START_STICKY`); Sentry **re-arms** | housekeeping alert **"Sentry restarted"** (sound + vibrate + banner); log "Restarted after unexpected exit: re-armed" |
+| Controller powered off and on while armed | `BOOT_COMPLETED` re-arms (setting **Resume armed after power-off**, default on) | housekeeping alert **"Sentry armed after restart"** |
+| Powered off while disarmed / after a swipe-away | nothing at boot | log "not arming" |
+| Force-stop (Settings → Apps → Force stop) | Android kills it and never restarts a force-stopped app; opening Sentry later leaves it DISARMED | log "Disarmed by user (app closed): … force-stopped?" |
+
+The armed flag is saved on ARM and cleared on DISARM and swipe-away; that flag is what boot and restart read
+(`core/RestartPolicy.kt`, `RestartPolicyTest`). Android 10 (the RC Plus) can't tell a force-stop from a crash after the
+fact, so an armed flag found with no service running when the app is opened counts as the pilot's force-stop; a
+controller power-cycled after a force-stop while armed re-arms at boot. Verified on the emulator
+(`docs/lifecycle-0.4.2.txt`): kill -9 → restarted and re-armed in about 1 s with "Sentry restarted"; swipe-away →
+disarmed, no restart within 45 s, no notifications left; force-stop → no restart in 60 s, opening the app →
+disarmed; armed + reboot → armed after boot with "Sentry armed after restart"; disarmed + reboot → stays off.
+
+## Resources (0.4.2)
+
+Owner: "Is there any way to measure the compute power or how much resources the app is using from the controller?"
+While armed, Sentry measures itself every 10 s and shows a **Resources** row at the bottom of the main screen's Sources
+column (scroll it), for example:
+
+```
+Resources   CPU 0.97 % (3.9 % of one core) · 74 MB · batt — · 977 KB/min
+```
+
+How to read it (the row shows the last minute):
+
+- **CPU 0.97 %** = the share of the whole controller (all its cores) Sentry used; **(3.9 % of one core)** is the same
+  work as a share of a single core, the figure Android's developer tools show. Read from `/proc/self/stat` (user +
+  system time) against the clock.
+- **74 MB** = memory Sentry holds right now (PSS: its private memory plus its share of shared libraries).
+- **−0.8 %/h** = how fast the battery is going down since ARM (shown after 5 min; "charging" while plugged in). This is
+  the **whole controller's** drain (screen, DroneSense, radios included): Android gives an app no battery figure of its
+  own. Compare a flight with Sentry armed to one without it.
+- **977 KB/min** = Sentry's own network traffic (both directions) over the last minute.
+
+**Settings → Resources** has the detail: CPU now / 1-min / 5-min / flight average / peak since ARM, memory now /
+averages / peak and Java heap, battery used since ARM, network averages and total data since ARM, wake-lock time, and
+what the measuring itself costs ("This monitor"). The log gets a line every 5 min (`RESOURCES …`) and a
+**flight summary** at DISARM (`FLIGHT SUMMARY armed 23 min · CPU avg … · PSS peak … · battery used … · data …`),
+both in **Share log**. A switch turns the measuring off.
+
+Measured on the emulator (`docs/resources-0.4.2-armed-5min.txt`; AVD rc-plus-29, 4 cores, armed live on low-power
+polling, UI never drawn, another app in front, four alternating 5-min runs measured from outside the app):
+
+| | CPU, % of one core | of the 4 cores |
+|---|---|---|
+| monitor on (2 runs) | 1.21 / 1.18 (mean 1.20) | 0.30 |
+| monitor off (2 runs) | 1.14 / 1.17 (mean 1.16) | 0.29 |
+| the monitor itself (its own thread time) | 0.031 / 0.034 (3.1–3.4 ms per 10 s sample) | 0.008 |
+
+So the monitor costs about **0.03–0.04 % of one core**, under the 0.1 % budget and inside run-to-run noise. Memory
+(PSS) moved between 46 and 141 MB between runs whether the monitor was on or off: nearly all of it is native heap from
+parsing the ~100 KB cloud ADS-B response every 5 s. Network: about **1 MB/min** received (~60 MB per armed hour) on
+low-power polling, the cloud ADS-B feed; more when airborne (2 s polls). With Sentry's screen open and being scrolled
+the CPU is several times higher (drawing the UI): in flight the screen is DroneSense's. The emulator's battery is
+fixed, so battery drain still needs a real RC Plus.
 
 ## Coexistence with DroneSense
 
 Owner: "make sure this software never impacts DroneSense on the controller while we're flying."
 
+- **Closing Sentry disarms it** (see *Armed stays armed* below): swiping it away from Recents disarms and shuts it
+  down cleanly; it is never restarted after that.
 - **Never takes the foreground.** No activity from the service, no full-screen intents; banners are heads-up
   notifications. Verified 0.4.0: armed live for 5 minutes with another app in front, `mResumedActivity` was that app
   in 30 of 30 samples (`docs/coexistence-0.4.0-armed-5min.txt`).
 - **Audio:** `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` (never `GAIN`) for the length of one sound, released right after.
 - **No prompts while armed.** Permission prompts only on the ARM tap before arming; the pre-flight list only on the
   pilot's own tap in Sentry. **Updates never install while armed.**
+- **Measured:** see *Resources* below: 0.4.2 on the emulator, about 1.2 % of one core (0.3 % of the controller) armed.
 - **Bounded work:** 1 s tick, 5 s watchdog, pollers at 1 / 2–5 / 2–5 s and TFRs every 10 min with capped backoff,
   one OkHttp client with 4/6/8 s timeouts. Measured 0.4.0 (rc-plus-29, armed live with low-power polling, another
   app in front, 5 min): **1.6 % of one core** (0.3.5: 3.3 %) and **PSS 116–124 MB** in a process that had drawn the
@@ -207,10 +291,13 @@ Owner: "make sure this software never impacts DroneSense on the controller while
 
 ## Data sources (all run at the same time, never either/or)
 
+The local feed is an **Overwatch ADS-B station**'s `/data/aircraft.json` (readsb-shaped) on the truck's Wi-Fi; without
+one, all traffic comes from the online feed (the worker's `/api/live/adsb`) plus the drone's own AirSense contacts.
+
 | What | Where | Cadence |
 |---|---|---|
 | Drone position | `GET {worker}/api/live/our-drones` and `/api/live/dronesense` + `X-Fleet-Token` | 2 s airborne, 5 s on the pad / absent |
-| Traffic A: truck station | `http://<station>:8080/data/aircraft.json` (Overwatch, readsb), typed URL and UDP beacon 41120 | 1 s |
+| Traffic A: Overwatch ADS-B station (local) | `http://<station>:8080/data/aircraft.json` (readsb-shaped), typed URL and UDP beacon 41120 | 1 s |
 | Traffic B: cloud | `GET {worker}/api/live/adsb` (browser User-Agent), filtered to 30 nm | 2 s airborne, 5 s on the pad / absent |
 | Traffic C: AirSense | the drone's own ADS-B contacts relayed in `our-drones` | with the drone feed |
 | TFRs | `GET {worker}/api/tfrs`, cached on disk | 10 min |
@@ -263,6 +350,16 @@ App update shows the installed and latest versions and the release notes; **Down
 and opens Android's installer. It checks at most once a day (hourly after a failure); a newer release posts one silent
 notification.
 
+## Share log (0.4.2)
+
+**Settings → Diagnostics → Share log** writes the last 24 hours to a text file and opens Android's share sheet (email,
+Bluetooth, Drive, whatever the controller has); **Copy** puts it on the clipboard instead (the newest ~200 KB) for
+controllers with nothing to share to. It holds every alert (time, tier, sound, banner text), pilot actions and
+mutes, source health changes, pre-flight results, resource summaries, restarts, plus the app version and the
+controller's model, Android version and screen (px, dpi, dp, font scale). Drone callsigns and names, the fleet token,
+and server / station addresses are replaced before it leaves the controller; the bound serial is kept. The log is kept
+in the app's own storage, trimmed to 24 h (`core/ShareLog.kt`, `ShareLogTest`).
+
 ## Releasing (maintainers)
 
 `VERSION` is the one version source (`0.4.0` → versionCode 400). Bump it, commit, `git tag v0.4.0 && git push origin
@@ -291,7 +388,9 @@ The replay drone's serial `1581F7K3C251F00C9B34` is **synthetic** (the recorded 
 ## Build & test
 
 ```
-./gradlew testDebugUnitTest   # :core:test (157) + app tests (17): prediction, tiers, cadence, mutes, banner text + hint,
+./gradlew testDebugUnitTest   # :core:test (189) + app tests (17): prediction, tiers, cadence, mutes, banner text + hint,
+                              # PASSING hold + turn-back, resources (/proc parsing, averaging, battery, texts),
+                              # restart / boot policy, share-log formatter + redaction, durations in words,
                               # outputs (sound fallback, vibration, one sound per tick), connectivity, poll rates,
                               # pre-flight, latency, demo timelines incl. the crossing variant, selection, parsers
 ./gradlew assembleDebug
@@ -303,6 +402,9 @@ is gone).
 
 ## Screenshots (AVD `rc-plus-29`: 1920×1200 at 400 dpi, Android 10, the real controller's profile)
 
+0.4.2: **81** the Resources row (main screen, Sources column; armed, UI open) · **82** Settings → Resources
+detail (while being scrolled, so CPU is high) · **83** Settings → Diagnostics (Share log / Copy) · **84** the share sheet
+(emulator; the RC Plus lists its own apps).
 0.4.0: **69** TRACK banner over another app with Got it · Ignore · Quiet 5 min · **70** the WARNING banner · **71**
 COLLISION RISK (synthetic crossing replay; no Got it / Ignore) · **72** replay with N388KM muted by Got it ("MUTED
 56 s", the action in Last alerts) · **73** armed live, waiting for this controller's aircraft · **74** the status
@@ -321,7 +423,9 @@ auto-save. 0.3.5: the RC Plus turned out to have no text-to-speech engine, so Se
 and competed with the radio; a distinct sound + a glanceable banner, then a look at AirSense / ForeFlight, is faster.
 The prediction model, tiers and cadence were redesigned with the owner and tuned on a fleet simulation of 86 real
 flights. 0.4.1 renames the bundled replay to a neutral demo encounter (placeholder drone, callsign and TFR id; the
-recorded geometry and timing are unchanged). See `docs/DESIGN.md`.
+recorded geometry and timing are unchanged). 0.4.2: Resources readout, PASSING banners stay PASSING, every alert sounds
+in Standard, durations in words ("1 min 28 s"), armed stays armed across crashes and power cycles (swipe-away
+disarms), Share log, "Overwatch station" naming. See `docs/DESIGN.md`.
 
 ## Layout
 
@@ -330,9 +434,10 @@ core/  pure Kotlin/JVM (no Android): Prediction (tCPA, miss, vertical, corridor,
        holds, hysteresis, zones, cadence), Cadence, Banner (fixed-shape text + hint), Outputs (SoundLevel, SoundChoice,
        OutputPlanner, Playback), Mutes (MuteBook), Connectivity (InternetMonitor), PollRates, Preflight, AlertLatency,
        Geo/CpaMath, Parsers, Selection (DroneSelector, Cylinder), TargetDisplay, FleetStatus, HealthMonitor, Replay,
-       Update (+ tests)
+       Update, Resources (ProcStat, ResourceMeter, ResourceText), RestartPolicy, ShareLog (+ tests)
 app/   SentryService (FGS, pollers, watchdog, replay, output pipeline, pre-flight), SoundPlayer (sounds, vibration,
        focus), Notifier (traffic / housekeeping / status notifications, banner timers), MainActivity, SettingsActivity,
-       Settings, FieldRules, Feeds (Http with reachability), RadarView, Updater, DroneHistory, ScreenLayout
-docs/  DESIGN.md, release notes, screenshots, replay / coexistence logs
+       Settings, FieldRules, Feeds (Http with reachability), RadarView, Updater, DroneHistory, ScreenLayout,
+       ResourceMonitor (10 s sampler), LogStore (24 h log file for Share log), BootReceiver (resume armed)
+docs/  DESIGN.md, release notes, screenshots, replay / coexistence / resources / lifecycle logs
 ```

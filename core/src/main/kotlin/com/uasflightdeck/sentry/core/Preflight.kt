@@ -50,7 +50,7 @@ object Preflight {
                 if (f.boundAirborne) "airborne" else "on the pad")
         },
         Item("Controller GPS", f.controllerGps, f.controllerGpsDetail, "Allow location for Sentry and wait for a fix outdoors"),
-        Item("Traffic feed", f.trafficOk, f.trafficDetail, "Cloud ADS-B needs the internet; or enable the truck station"),
+        Item("Traffic feed", f.trafficOk, f.trafficDetail, "Cloud ADS-B needs the internet; or enable the Overwatch ADS-B station"),
         Item("TFR data", f.tfrOk, f.tfrDetail, "Needs the internet once; the last download is kept on the controller"),
         Item("Notifications", f.notificationsEnabled && f.headsUpAllowed,
             when { !f.notificationsEnabled -> "off"; !f.headsUpAllowed -> "on, but traffic banners can't pop up"; else -> "on, heads-up allowed" },

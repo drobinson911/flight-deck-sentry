@@ -1,0 +1,44 @@
+Flight Deck Sentry 0.4.2 · ResourceMonitor cost, AVD rc-plus-29 (Android 10, 4 cores, CLK_TCK 100), 2026-09-24
+Each run: service only (UI never drawn), Android Settings in front, armed live, low-power polling (mock drone feed with no
+drones on the host, cloud ADS-B + TFRs from the real worker), 15 s warm-up, then 300 s measured from outside via
+/proc/<pid>/stat utime+stime. Runs alternate monitor ON / OFF (Settings -> Resources switch). Host: a shared Linux build machine with other VMs running.
+
+run=on1 monitor=true pid=5641 cores=4
+external /proc: 364 ticks = 3.64 s CPU in 300.0 s wall = 1.213 % of one core = 0.303 % of 4 cores
+host loadavg start/end: 3.87 / 1.87
+meminfo:         TOTAL    65182    61360      148        0    36542    25967    10574
+foreground:     mResumedActivity: ActivityRecord{d3cbf77 u0 com.android.settings/.homepage.SettingsHomepageActivity t51}
+    RESOURCES armed 5:00 · CPU 5-min 0.33 % (1.3 % of one core) · peak 1.2 % (4.8 % of one core) · PSS 62 MB (peak 120 MB) · heap 3 MB · 0.0 %/h · net 5-min 1.2 MB/min · monitor 3.09 ms/sample
+    FLIGHT SUMMARY armed 5:15 · CPU avg 0.33 % (1.3 % of one core) · peak 1.2 % (4.8 % of one core) · PSS peak 120 MB · battery used 0.0 % (0.0 %/h) · data 6.1 MB (down 5.8 MB · up 277 KB) · wake lock 5:15
+
+run=off1 monitor=false pid=5993 cores=4
+external /proc: 343 ticks = 3.43 s CPU in 300.0 s wall = 1.143 % of one core = 0.286 % of 4 cores
+host loadavg start/end: 1.64 / 3.11
+meminfo:         TOTAL    46170    33604     8872        0    22747    10824    11922
+foreground:     mResumedActivity: ActivityRecord{d3cbf77 u0 com.android.settings/.homepage.SettingsHomepageActivity t51}
+
+run=on2 monitor=true pid=6147 cores=4
+external /proc: 354 ticks = 3.54 s CPU in 300.0 s wall = 1.180 % of one core = 0.295 % of 4 cores
+host loadavg start/end: 2.75 / 2.43
+meminfo:         TOTAL    59680    47188     8812        0    36718    19247    17470
+foreground:     mResumedActivity: ActivityRecord{d3cbf77 u0 com.android.settings/.homepage.SettingsHomepageActivity t51}
+    RESOURCES armed 5:00 · CPU 5-min 0.30 % (1.2 % of one core) · peak 0.57 % (2.3 % of one core) · PSS 59 MB (peak 149 MB) · heap 3 MB · 0.0 %/h · net 5-min 1.1 MB/min · monitor 3.38 ms/sample
+    FLIGHT SUMMARY armed 5:15 · CPU avg 0.31 % (1.2 % of one core) · peak 0.57 % (2.3 % of one core) · PSS peak 149 MB · battery used 0.0 % (0.0 %/h) · data 5.7 MB (down 5.4 MB · up 272 KB) · wake lock 5:15
+
+run=off2 monitor=false pid=6323 cores=4
+external /proc: 352 ticks = 3.52 s CPU in 300.0 s wall = 1.173 % of one core = 0.293 % of 4 cores
+host loadavg start/end: 2.12 / 2.43
+meminfo:         TOTAL    49198    36752     8816        0    23267     8591    14675
+foreground:     mResumedActivity: ActivityRecord{d3cbf77 u0 com.android.settings/.homepage.SettingsHomepageActivity t51}
+
+Summary (CPU, % of one core over 300 s, measured externally):
+  monitor ON : 1.213, 1.180  -> mean 1.197 %   (0.299 % of the 4 cores)
+  monitor OFF: 1.143, 1.173  -> mean 1.158 %   (0.290 % of the 4 cores)
+  difference : +0.039 % of one core (+0.010 % of the device), inside run-to-run noise (0.03-0.07 %)
+  the monitor's own thread CPU per sample (in-app, Debug.threadCpuTimeNanos): 3.09 / 3.38 ms per 10 s = 0.031 / 0.034 % of one core
+  -> both under the 0.1 % budget.
+Memory: dumpsys meminfo TOTAL PSS 65 / 60 MB (ON) vs 46 / 49 MB (OFF) at the end of the runs. A follow-up (75 s armed, meminfo
+  breakdown, ON/OFF/ON) gave 62 / 60 / 141 MB: the swing is all Native Heap (34 -> 97 MB), i.e. the ~100 KB cloud ADS-B JSON fetched
+  and parsed every 5 s, not the monitor (its Java/native allocations per sample are a few small strings).
+Network: ~1.0-1.2 MB/min received while armed on low-power polling = the cloud ADS-B fetch (~96 KB every 5 s).
+Battery: the emulator's battery is fixed (80 %, charge counter constant): 0.0 %/h here; real drain needs the RC Plus.

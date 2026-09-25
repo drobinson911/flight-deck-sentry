@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import com.uasflightdeck.sentry.core.RestartPolicy.Exit as X
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -103,9 +104,31 @@ class MainActivity : AppCompatActivity() {
                 launch { SentryBus.preflightRunning.collect { running -> preflightBtn.text = if (running) "Checking…" else "Pre-flight" } }
             }
         }
-        // Sticky state: if Sentry was armed but the service isn't running (e.g. app updated), re-arm.
-        if (settings.armed && SentryBus.state.value.mode == Mode.OFF) SentryService.send(this, SentryService.ACTION_ARM)
+        // 0.4.2 (owner): no automatic restart, ever. Armed but no service running = the pilot force-closed Sentry
+        // (or it died): it stays DISARMED until ARM is tapped.
+        if (settings.armed && SentryBus.state.value.mode == Mode.OFF) {
+            when (val d = com.uasflightdeck.sentry.core.RestartPolicy.onAppOpenedWithoutService(true, lastExit())) {
+                is com.uasflightdeck.sentry.core.RestartPolicy.Decision.Rearm -> { SentryBus.log(d.log)
+                    SentryService.send(this, SentryService.ACTION_ARM) { it.putExtra(SentryService.EXTRA_RESTART, SentryService.RESTART_UNEXPECTED) } }
+                is com.uasflightdeck.sentry.core.RestartPolicy.Decision.Disarm -> { settings.armed = false; d.log?.let { SentryBus.log(it) } }
+                else -> Unit
+            }
+        }
         handleDebugIntent(intent)
+    }
+
+    /** Why this app's last process ended (Android 11+); Android 10 can't tell a force-stop from a crash. */
+    private fun lastExit(): X {
+        if (Build.VERSION.SDK_INT < 30) return X.UNKNOWN
+        val am = getSystemService(android.app.ActivityManager::class.java) ?: return X.UNKNOWN
+        val r = runCatching { am.getHistoricalProcessExitReasons(packageName, 0, 1).firstOrNull()?.reason }.getOrNull() ?: return X.UNKNOWN
+        return when (r) {
+            android.app.ApplicationExitInfo.REASON_USER_REQUESTED, android.app.ApplicationExitInfo.REASON_USER_STOPPED -> X.USER_CLOSED
+            android.app.ApplicationExitInfo.REASON_CRASH, android.app.ApplicationExitInfo.REASON_CRASH_NATIVE,
+            android.app.ApplicationExitInfo.REASON_ANR, android.app.ApplicationExitInfo.REASON_LOW_MEMORY,
+            android.app.ApplicationExitInfo.REASON_SIGNALED -> X.CRASH_OR_SYSTEM
+            else -> X.UNKNOWN
+        }
     }
 
     override fun onResume() {
@@ -176,6 +199,8 @@ class MainActivity : AppCompatActivity() {
                 if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
                 // --es style STANDARD|QUIET|LOUD
                 i.getStringExtra("style")?.let { v -> runCatching { settings.alertStyle = com.uasflightdeck.sentry.core.AlertStyle.valueOf(v) } }
+                // --ez resources false: the ResourceMonitor off (for measuring its own cost)
+                if (i.hasExtra("resources")) settings.resourceMonitorOn = i.getBooleanExtra("resources", true)
             }
         }
         i.removeExtra("sentry_action")
@@ -332,7 +357,9 @@ class MainActivity : AppCompatActivity() {
                 HealthMonitor.State.WAITING -> "WAIT   " to R.color.caution
                 HealthMonitor.State.DISABLED -> "OFF    " to R.color.dim
             }
-            sb.add(r.name.padEnd(14).take(14), col(R.color.ink)).add(label, col(c), true)
+            // A name longer than the 14-character column ("Overwatch station") gets its own line.
+            if (r.name.length > 14) sb.add(r.name + "\n" + " ".repeat(14), col(R.color.ink)) else sb.add(r.name.padEnd(14), col(R.color.ink))
+            sb.add(label, col(c), true)
                 .add(age(r.ageSec).padEnd(6), col(R.color.ink)).tail(27, r.detail.take(60), col(R.color.dim), sc)
         }
         if (st.mode != Mode.OFF && st.selectionMode != null) {
@@ -367,6 +394,13 @@ class MainActivity : AppCompatActivity() {
             sb.add("Polling".padEnd(14), col(R.color.ink)).tail(14, st.pollRates, col(R.color.dim), sc)
             sb.add("Sounds".padEnd(14), col(R.color.ink)).add("${st.sounds}\n", col(if (st.soundsOk) R.color.ok else R.color.caution), true)
             sb.add("Vibration".padEnd(14), col(R.color.ink)).add("${st.vibration}\n", col(R.color.dim))
+            val rs = ResourceMonitor.state.value
+            sb.add("Resources".padEnd(14), col(R.color.ink)).tail(14,
+                when {
+                    !rs.on -> "off (Settings → Resources)"
+                    !rs.running -> "measured while armed"
+                    else -> com.uasflightdeck.sentry.core.ResourceText.row(rs.snapshot)
+                }, col(R.color.dim), sc)
         }
         sources.text = sb
 
@@ -390,7 +424,8 @@ class MainActivity : AppCompatActivity() {
             val extra = ArrayList<String>()
             if (t.tier >= com.uasflightdeck.sentry.core.Tier.ADVISORY) extra += TIER_TAG.getValue(t.tier)
             val tc2 = t.tCpaSec; val miss = t.missNm
-            if (tc2 != null && miss != null) extra += "CPA ${com.uasflightdeck.sentry.core.Banner.clock(tc2)} miss ${com.uasflightdeck.sentry.core.Banner.dist(miss)}"
+            if (t.passing) extra += "PASSING"
+            else if (tc2 != null && miss != null) extra += "CPA ${com.uasflightdeck.sentry.core.Banner.clock(tc2)} miss ${com.uasflightdeck.sentry.core.Banner.dist(miss)}"
             else if (t.trend == com.uasflightdeck.sentry.core.Trend.DIVERGING) extra += "opening"
             st.muted[t.hex]?.let { extra += "MUTED " + it.removePrefix("muted ") }
             if (t.zones.isNotEmpty()) extra += "IN ${t.zones.joinToString()}"

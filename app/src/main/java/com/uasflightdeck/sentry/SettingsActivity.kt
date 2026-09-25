@@ -50,6 +50,7 @@ import com.uasflightdeck.sentry.core.FleetStatus
 import com.uasflightdeck.sentry.core.CylinderAltRef
 import com.uasflightdeck.sentry.core.Parsers
 import com.uasflightdeck.sentry.core.Units
+import com.uasflightdeck.sentry.core.ResourceText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,7 +61,7 @@ import java.util.Locale
  * One scrolling page: two columns at 1000 dp and wider, one column on the RC Plus (~768 dp). On the
  * controller the order is (owner, 0.4.0): rings & volume (+ targets shown), controller cylinders, this
  * controller's aircraft, prediction, cadence & alert style & banner duration & mute timings, sounds &
- * vibration, fleet token / station / TFR zones, geofences, background, app update, and the replay last.
+ * vibration, fleet token / Overwatch station / TFR zones, geofences, background, app update, and the replay last.
  *
  * Auto-save (0.3.4): every field persists ~400 ms after the last keystroke (switches at once), and again
  * on Save, Back and when leaving the screen. A numeric field that isn't a valid number in range shows a
@@ -252,8 +253,9 @@ class SettingsActivity : AppCompatActivity() {
             styles.addView(radio("Standard", 401)); styles.addView(radio("Quiet", 402)); styles.addView(radio("Loud", 403))
             styles.check(when (s.alertStyle) { AlertStyle.QUIET -> 402; AlertStyle.LOUD -> 403; else -> 401 })
             addView(styles)
-            addView(note("Standard: advisory is banner-only, caution and up sound. Quiet: every repeat interval doubled, advisory and caution " +
-                "banner-only. Loud: advisory sounds too. Escalations always sound; the COLLISION RISK tone is never slowed."))
+            addView(note("Standard: every alert sounds (advisory = one soft tone + short vibrate on entry; its repeats are banner-only). " +
+                "Quiet: advisories are silent, caution is banner-only and every repeat interval is doubled. Loud: advisory repeats sound too. " +
+                "Escalations always sound; the COLLISION RISK tone is never slowed."))
             val wf = num("WARNING repeat, 1 mi and beyond (s)", s.warnFarSec, FieldRules.REPEAT_SEC)
             val wn = num("WARNING repeat, 0.5–1 mi (s)", s.warnNearSec, FieldRules.REPEAT_SEC)
             val wc = num("WARNING repeat, inside 0.5 mi or closest in < 30 s (s; never faster than 6)", s.warnCloseSec, FieldRules.REPEAT_SEC)
@@ -285,7 +287,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // ── then: feeds, TFR / geofences, background, app update, replay ──
-        section(right, "Fleet token, station & updates").apply {
+        section(right, "Fleet token & worker").apply {
             addView(note("Fleet feed (drone position)"))
             val token = field("Fleet token (X-Fleet-Token)", if (s.fleetTokenIsDefault) "" else s.fleetToken,
                 hint = if (s.fleetTokenIsDefault) "using token built into this APK" else "paste token", password = true)
@@ -303,14 +305,19 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
+        section(right, "Overwatch ADS-B station (URL)").apply {
+            addView(note("The local feed: an Overwatch station's /data/aircraft.json (readsb-shaped) over Wi-Fi. Without it, " +
+                "all traffic comes from the online feed."))
+            val st = switch("Use the Overwatch station", s.stationEnabled)
+            val url = field("Overwatch station URL", s.stationUrl, hint = "192.168.1.20 or http://host:8080")
+            val auto = switch("Auto-discover the Overwatch station (LAN beacon)", s.stationAutoDiscover)
+            savers += { s.stationEnabled = st.isChecked; s.stationUrl = url.text.toString().trim(); s.stationAutoDiscover = auto.isChecked }
+        }
+
         section(right, "Traffic sources (all run together)").apply {
-            val st = switch("Truck station (Overwatch) over Wi-Fi", s.stationEnabled)
-            val url = field("Station address", s.stationUrl, hint = "192.168.1.20 or http://host:8080")
-            val auto = switch("Auto-discover station (Overwatch LAN beacon)", s.stationAutoDiscover)
-            val cloud = switch("Cloud ADS-B (uas-app worker)", s.cloudEnabled)
+            val cloud = switch("Online ADS-B feed (uas-app worker)", s.cloudEnabled)
             val radius = num("Traffic radius (nm)", s.trafficRadiusNm, FieldRules.TRAFFIC_RADIUS)
-            savers += { s.stationEnabled = st.isChecked; s.stationUrl = url.text.toString().trim(); s.stationAutoDiscover = auto.isChecked
-                s.cloudEnabled = cloud.isChecked; s.trafficRadiusNm = radius.valueOr(s.trafficRadiusNm) }
+            savers += { s.cloudEnabled = cloud.isChecked; s.trafficRadiusNm = radius.valueOr(s.trafficRadiusNm) }
             val tfr = num("Watch (show) TFRs within (nm of drone)", s.tfrRelevanceNm, FieldRules.TFR_RELEVANCE)
             val za = num("Zone entry alerts only for TFRs / geofences containing the drone or within (nm)", s.zoneAlertNm, FieldRules.ZONE_ALERT_NM)
             savers += { s.tfrRelevanceNm = tfr.valueOr(s.tfrRelevanceNm); s.zoneAlertNm = za.valueOr(s.zoneAlertNm) }
@@ -332,10 +339,43 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         section(right, "Background").apply {
-            val boot = switch("Re-arm automatically after reboot (if armed)", s.autoStartOnBoot)
-            savers += { s.autoStartOnBoot = boot.isChecked }
+            val boot = switch("Resume armed after power-off", s.resumeAfterPowerOff)
+            addView(note("Armed stays armed until you DISARM or swipe Sentry away: after a power cycle it comes back armed " +
+                "(\"Sentry armed after restart\"), after a crash it restarts itself (\"Sentry restarted\")."))
+            savers += { s.resumeAfterPowerOff = boot.isChecked }
             batteryStatus = note(batteryText()); addView(batteryStatus)
             addView(button("Battery optimisation exemption…", secondary = true) { requestBattery() })
+        }
+        section(right, "Resources (what Sentry uses while armed)").apply {
+            addView(note("Measured every 10 s from ARM to DISARM: CPU from /proc (as a share of all the controller's cores, " +
+                "and of one core), memory (PSS + Java heap), the battery's drain per hour, Sentry's own network data and its " +
+                "wake lock. Battery is the WHOLE controller's drain (screen, DroneSense and radios included): Android gives " +
+                "apps no per-app battery figure. A summary goes to the log every 5 min and a flight summary at DISARM."))
+            val on = switch("Measure resources while armed", s.resourceMonitorOn)
+            savers += { s.resourceMonitorOn = on.isChecked }
+            val detail = TextView(this@SettingsActivity).apply { textSize = 15f; setTextColor(col(R.color.ink)); setPadding(0, dp(6), 0, dp(4)) }
+            addView(detail)
+            fun render(st: ResourceMonitor.State) {
+                val sb = android.text.SpannableStringBuilder()
+                if (!st.on) sb.append("Off.")
+                else ResourceText.detail(st.snapshot).forEach { (k, v) ->
+                    val a = sb.length; sb.append(k)
+                    sb.setSpan(android.text.style.ForegroundColorSpan(col(R.color.dim)), a, sb.length, 0)
+                    sb.append("  ").append(v).append("\n")
+                }
+                if (st.on && !st.running && st.snapshot != null) sb.append("(last armed period; not armed now)")
+                detail.text = sb.trimEnd()
+            }
+            lifecycleScope.launch {
+                repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { ResourceMonitor.state.collect { render(it) } }
+            }
+        }
+        section(right, "Diagnostics").apply {
+            addView(note("Share log sends the last 24 hours as a text file: every alert (time, tier, sound, banner text), " +
+                "what you tapped and the mutes, source health changes, pre-flight results and resource summaries, with the " +
+                "app version and this controller's model, Android version and screen. Drone callsigns, the fleet token and " +
+                "server / station addresses are removed; the bound serial is kept."))
+            addView(row(button("Share log") { shareLog(copy = false) }, button("Copy", secondary = true) { shareLog(copy = true) }))
         }
         section(right, "App update (GitHub releases)").apply {
             updateInfo = TextView(this@SettingsActivity).apply { textSize = 17f; setTextColor(col(R.color.ink)); setPadding(0, dp(4), 0, dp(4)) }
@@ -707,6 +747,32 @@ class SettingsActivity : AppCompatActivity() {
     private fun requestBattery() {
         runCatching { startActivity(Intent(SysSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) }
             .onFailure { runCatching { startActivity(Intent(SysSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
+    }
+
+    /** Diagnostics → Share log / Copy: build off the UI thread, then the share sheet (or the clipboard). */
+    private fun shareLog(copy: Boolean) {
+        lifecycleScope.launch {
+            val text = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { LogStore.build(this@SettingsActivity) } }
+                .getOrElse { toast("Log unavailable: ${it.message}"); return@launch }
+            if (copy) {
+                // The clipboard goes through a binder transaction: keep the newest ~200 KB.
+                val clip = if (text.length > 200_000) "…(older lines cut for the clipboard; use Share log for all of it)\n" + text.takeLast(200_000) else text
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Sentry log", clip))
+                toast("Log copied (${text.lines().size} lines)")
+                return@launch
+            }
+            val dir = File(cacheDir, "logs").apply { mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }
+            val name = "sentry-log-" + java.text.SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(java.util.Date()) + ".txt"
+            val f = File(dir, name).apply { writeText(text) }
+            val uri = androidx.core.content.FileProvider.getUriForFile(this@SettingsActivity, "$packageName.logs", f)
+            val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .putExtra(Intent.EXTRA_SUBJECT, "Flight Deck Sentry log ${name.removePrefix("sentry-log-").removeSuffix(".txt")}")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            runCatching { startActivity(Intent.createChooser(send, "Share Sentry log")) }
+                .onFailure { toast("No app to share with on this controller: use Copy") }
+        }
     }
 
     // ── tiny view helpers ─────────────────────────────────────────────────

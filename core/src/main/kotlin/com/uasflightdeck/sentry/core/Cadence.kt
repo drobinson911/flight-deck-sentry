@@ -10,7 +10,7 @@ package com.uasflightdeck.sentry.core
  * | WARNING         | >= 1 nm: 20 s; 0.5-1 nm: 12 s; < 0.5 nm or tCPA < 30 s: 6 s | short sound, vibrate, silent banner |
  * | CAUTION         | every 20 s                                                | short sound, vibrate, silent banner |
  * | TRACK ALERT     | every 30 s                                                | banner-only (no sound)              |
- * | ADVISORY        | every 30 s                                                | banner-only (sound: Loud style only) |
+ * | ADVISORY        | every 30 s                                                | banner-only (sound: Loud style only; entry sounds in Standard) |
  *
  * Not converging (range steady or opening): no repeats at all (COLLISION RISK excepted: its tone runs until the
  * tier drops). Never faster than [SentryConfig.minRepeatSec]

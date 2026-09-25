@@ -18,14 +18,14 @@ class BannerTest {
         val b = Banner.traffic(v(Tier.TRACK))
         assertEquals("▲ TRACK · N388KM Cessna", b.title)
         assertEquals("SW 7.9 mi · 160 kt · 300 below, climbing", b.line2)
-        assertEquals("Passing within 0.3 mi in 2:58", b.line3)
+        assertEquals("Passing within 0.3 mi in 2 min 58 s", b.line3)
         assertEquals("Clear: move NW ↑", b.line4)
     }
 
     @Test fun warningBanner() {
         val b = Banner.traffic(v(Tier.WARNING, dist = 1.9, pred = Prediction.Result(89.0, 2700 / Units.FT_PER_NM, -100.0, 1.9, -80.0, null)))
         assertEquals("⚠ WARNING · N388KM", b.title)
-        assertEquals("Closest 2,700 ft in 1:29", b.line3)
+        assertEquals("Closest 2,700 ft in 1 min 29 s", b.line3)
     }
 
     @Test fun collisionBannerCrossing() {
@@ -35,7 +35,7 @@ class BannerTest {
         assertEquals("200 below, climbing through your altitude · 12 s", b.line3)
         // no crossing: closest + the vertical at CPA
         val c = Banner.traffic(v(Tier.COLLISION, dist = 0.6, pred = Prediction.Result(45.0, 300 / Units.FT_PER_NM, -120.0, 0.6, -80.0, null)))
-        assertEquals("Closest 300 ft in 0:45, 100 below", c.line3)
+        assertEquals("Closest 300 ft in 45 s, 100 below", c.line3)
     }
 
     @Test fun otherTitles() {
@@ -51,7 +51,7 @@ class BannerTest {
         assertEquals("7.9 mi", Banner.dist(7.94)); assertEquals("1.0 mi", Banner.dist(1.0))
         assertEquals("2,700 ft", Banner.dist(0.444)); assertEquals("100 ft", Banner.dist(0.001))
         assertEquals("0.3 mi", Banner.miles(0.26)); assertEquals("300 ft", Banner.miles(0.05))
-        assertEquals("2:58", Banner.clock(178.2)); assertEquals("0:09", Banner.clock(9.4)); assertEquals("0:00", Banner.clock(-3.0))
+        assertEquals("2 min 58 s", Banner.clock(178.2)); assertEquals("9 s", Banner.clock(9.4)); assertEquals("0 s", Banner.clock(-3.0))
         assertEquals("300 below", Banner.vertical(-312.0)); assertEquals("1,200 above", Banner.vertical(1234.0))
         assertEquals("same alt", Banner.vertical(40.0)); assertEquals("alt unknown", Banner.vertical(null))
         assertEquals("≈300 below", Banner.vertical(-290.0, estimated = true))
@@ -96,5 +96,11 @@ class BannerTest {
     @Test fun displayFormatting() {
         assertEquals("0.24 nm (1,458 ft)", Phrasing.displayDistance(0.24))
         assertEquals("250 ft below (est.)", Phrasing.displayVertical(-250.0, true))
+    }
+
+    @Test fun durationsInWords() {
+        assertEquals("43 s", Banner.clock(43.4)); assertEquals("0 s", Banner.clock(-2.0))
+        assertEquals("1 min 28 s", Banner.clock(88.0)); assertEquals("2 min", Banner.clock(120.0))
+        assertEquals("59 min 59 s", Banner.clock(3599.0)); assertEquals("1 h 5 min", Banner.clock(3900.0)); assertEquals("2 h", Banner.clock(7200.0))
     }
 }

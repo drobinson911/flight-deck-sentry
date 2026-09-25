@@ -177,6 +177,8 @@ enum class EventKind {
     PREFLIGHT,
     /** "Sentry sounds on": Quiet 5 min ran out. */
     SOUNDS_ON,
+    /** 0.4.2: "Sentry restarted" (crash / system kill) or "Sentry armed after restart" (power cycle). */
+    RESTARTED,
     TEST, SYSTEM,
 }
 
@@ -282,7 +284,7 @@ data class SentryConfig(
     val collisionRepeatSec: Double = 3.0,
     /** Quiet alert style = 2.0 (every interval doubled). */
     val cadenceScale: Double = 1.0,
-    /** Advisory makes a sound (the Loud alert style only). Default: advisory is banner-only. */
+    /** Advisory REPEATS make a sound (the Loud alert style only). The advisory entry sound is decided by the style in OutputPlanner. */
     val advisorySound: Boolean = false,
 
     /** A zone (TFR, geofence, cylinder) re-entered within this many seconds is not alerted again. */

@@ -116,7 +116,7 @@ class EngineTiersTest {
         val w = ev.first()
         assertEquals(Tier.WARNING, w.tier)
         assertEquals(Phase.ESCALATION, w.phase)
-        assertTrue(w.banner!!.line3, w.banner!!.line3.matches(Regex("Closest 1,800 ft in 0:(49|50)")))
+        assertTrue(w.banner!!.line3, w.banner!!.line3.matches(Regex("Closest 1,800 ft in (49|50) s")))
     }
 
     @Test fun warningHorizonIs60sByDefault() {

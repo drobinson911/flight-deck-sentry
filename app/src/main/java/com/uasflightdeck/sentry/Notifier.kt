@@ -188,6 +188,7 @@ class Notifier(private val ctx: Context) {
         val l = live[hex] ?: return
         if (l.text == b && l.tier == tier) return
         if (l.text.title != b.title && tier < (l.tier ?: Tier.NONE)) return     // a step down waits for its own event
+        if (l.text.title != b.title) SentryBus.log("BANNER retitle $id: ${l.text.title} -> ${b.title}")
         l.text = b
         notify(trafficId(hex), trafficNotification(hex, id, b, tier, alert = false, silent = false))
     }

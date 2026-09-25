@@ -50,6 +50,13 @@ class AlertEngine(
         val escapeBearingDeg: Double? = null,
         /** +1 ↑, -1 ↓, 0 none. */
         val escapeVertical: Int = 0,
+        /**
+         * 0.4.2: PASSING was announced for this aircraft and it has not turned back toward the drone. Its banner stays
+         * "● PASSING · <id> · diverging" (grey, silent, in place) until CLEAR, whatever ring it is still inside.
+         */
+        val passing: Boolean = false,
+        /** Closest range this pass (nm), for the PASSING banner. */
+        val closestNm: Double? = null,
     ) {
         val severity: Severity get() = tier.severity
         /** The tier comes from a prediction (TRACK / predicted WARNING / COLLISION RISK) rather than a ring. */
@@ -418,7 +425,12 @@ class AlertEngine(
                 tier < st.announced && tier >= Tier.ADVISORY -> {
                     // Steps down are silent: a banner update ("passing"/downgrade), no sound. A TRACK ALERT whose
                     // prediction lapsed says "no longer a factor" even when the aircraft is still inside a ring.
-                    out += if (st.announced == Tier.TRACK) AlertEvent(nowMs, EventKind.NO_LONGER_FACTOR, Severity.INFO,
+                    // After PASSING (0.4.2) the step-down keeps the PASSING banner: grey, silent, in place.
+                    out += if (st.passed) AlertEvent(nowMs, EventKind.TRAFFIC, tier.severity,
+                        text = "${cur.displayId} passing, diverging (closest ${Banner.dist(st.minRangeNm)})", hex = cur.hex,
+                        distNm = distNm, tier = tier, phase = Phase.DOWNGRADE, banner = Banner.passing(view, st.minRangeNm),
+                        closenessS = sNow)
+                    else if (st.announced == Tier.TRACK) AlertEvent(nowMs, EventKind.NO_LONGER_FACTOR, Severity.INFO,
                         text = "${cur.displayId} no longer a factor", hex = cur.hex, distNm = distNm, tier = tier,
                         phase = Phase.DOWNGRADE, banner = Banner.noLongerFactor(view), closenessS = sNow)
                     else traffic(Phase.DOWNGRADE, Cue.NONE, false)
@@ -445,6 +457,9 @@ class AlertEngine(
                 }
             }
             events += out
+            // What the banner shows from now on (the per-second refresh uses it): PASSING until CLEAR or turning back.
+            if (st.passed && tier >= Tier.ADVISORY)
+                views[views.lastIndex] = view.copy(passing = true, closestNm = st.minRangeNm.takeIf { it < Double.MAX_VALUE })
             st.prevMargin.clear(); st.prevMargin.putAll(margins); st.prevMarginMs = nowMs
         }
 

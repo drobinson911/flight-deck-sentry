@@ -10,5 +10,9 @@ object SystemText {
     const val INTERNET_REGAINED = "Internet back"
 
     /** Link-health sources: key to display name (HealthMonitor says "<name> lost / not reachable / regained", screen only). */
-    val HEALTH_SOURCES = listOf("fleet" to "Drone feed", "station" to "Station link", "cloud" to "Cloud traffic", "tfr" to "TFR data")
+    val HEALTH_SOURCES = listOf("fleet" to "Drone feed", "station" to "Overwatch station link", "cloud" to "Cloud traffic", "tfr" to "TFR data")
+
+    /** The Sources row label when it differs from the alert name: "Overwatch station". */
+    private val ROW_LABELS = mapOf("station" to "Overwatch station")
+    fun rowLabel(key: String, name: String): String = ROW_LABELS[key] ?: name
 }

@@ -111,7 +111,12 @@ class Settings(ctx: Context) {
 
     // service
     var armed by bool("armed", false)
+    /** Pre-0.4.2 opt-in (default off); superseded by [resumeAfterPowerOff]. No longer read. */
     var autoStartOnBoot by bool("autoStartOnBoot", false)
+    /** 0.4.2 (owner): armed at power-off = armed again after power-on. Default ON. */
+    var resumeAfterPowerOff by bool("resumeAfterPowerOff", true)
+    /** 0.4.2: measure this app's CPU / memory / battery / network while armed (Settings → Resources). */
+    var resourceMonitorOn by bool("resourceMonitorOn", true)
     var replaySpeed by dbl("replaySpeed", 1.0)
     var replayCloudView by bool("replayCloudView", false)
     /** Replay the SYNTHETIC crossing variant (N388KM climbing through the drone's altitude: COLLISION RISK). */

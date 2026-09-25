@@ -49,13 +49,18 @@ enum class SoundLevel(
 }
 
 /**
- * STANDARD: advisory banner-only (fleet simulation: 87 of 98 false alarms were the 3 nm ring alone), caution and up
- * sound. QUIET: every cadence interval doubled, advisory & caution banner-only. LOUD: advisory sounds too.
+ * 0.4.2 (owner: pilots may be on an automated mission, not holding the controller, so a banner-only alert can be
+ * missed): STANDARD = EVERY traffic alert sounds; advisory entry is one soft tone (SHORT cue) + short vibrate, its
+ * repeats stay banner-only. QUIET: every cadence interval doubled, advisory & caution banner-only (0.4.0-0.4.1's
+ * Standard advisory behaviour). LOUD: advisory entry full sound, and its repeats sound too.
  */
 enum class AlertStyle(val label: String) {
     STANDARD("Standard"), QUIET("Quiet"), LOUD("Loud");
     val cadenceScale get() = if (this == QUIET) 2.0 else 1.0
+    /** Advisory REPEATS sound (Loud only). */
     val advisorySound get() = this == LOUD
+    /** Advisory ENTRY (the escalation to advisory) sounds: Standard (soft tone) and Loud. */
+    val advisoryEntrySound get() = this != QUIET
 }
 
 /**
@@ -143,6 +148,7 @@ object OutputPlanner {
         EventKind.OWNSHIP_ACQUIRED, EventKind.OWNSHIP_REGAINED -> SoundLevel.BOUND
         EventKind.OWNSHIP_LOST -> if (ev.repeat) null else SoundLevel.BOUND
         EventKind.PREFLIGHT, EventKind.SOUNDS_ON -> SoundLevel.PREFLIGHT
+        EventKind.RESTARTED -> SoundLevel.BOUND
         EventKind.TEST -> SoundLevel.WARNING
         else -> null
     }
@@ -177,7 +183,10 @@ object OutputPlanner {
             // Escalations, zone entries and COLLISION RISK always sound: every mute gives way to them.
             val bypass = ev.phase == Phase.ESCALATION || ev.popup || ev.tier == Tier.COLLISION
             when {
-                level == SoundLevel.ADVISORY && !style.advisorySound -> { cue = Cue.NONE; why = "advisory is banner-only" }
+                level == SoundLevel.ADVISORY && style == AlertStyle.QUIET -> { cue = Cue.NONE; why = "quiet style: advisory is banner-only" }
+                // Standard: the advisory entry is one soft tone + short vibrate; its repeats stay banner-only.
+                level == SoundLevel.ADVISORY && ev.phase == Phase.ESCALATION && style == AlertStyle.STANDARD -> cue = Cue.SHORT
+                level == SoundLevel.ADVISORY && ev.phase != Phase.ESCALATION && !style.advisorySound -> { cue = Cue.NONE; why = "advisory repeats are banner-only" }
                 style == AlertStyle.QUIET && level == SoundLevel.CAUTION -> { cue = Cue.NONE; why = "quiet style" }
                 bypass -> Unit
                 ev.hex != null && mutes.aircraftMute(ev.hex, nowMs) != null -> { cue = Cue.NONE; why = "muted" }

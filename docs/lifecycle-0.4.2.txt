@@ -1,0 +1,36 @@
+Flight Deck Sentry 0.4.2 · lifecycle on AVD rc-plus-29 (Android 10, 1920x1200 @ 400 dpi), 2026-09-25
+Lines under each step are Sentry's own log (files/sentry-log.txt), filtered to lifecycle events.
+
+== A. after reinstall while armed (MY_PACKAGE_REPLACED) (00:17:49)
+pid: 9220
+ALERT[live] 00:17:34 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+== C. kill -9 while armed (system kill) (00:17:52)
+old pid 9220 new pid 9320
+Service created
+Restarted after unexpected exit: re-armed
+ARMED (live)
+ALERT[live] 00:17:53 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry restarted
+== B. swipe away from Recents while armed (00:18:07)
+pid after swipe + 45 s: '9320' · armed pref: name="armed" value="false"
+Disarmed by user (app closed)
+DISARMED
+FLIGHT SUMMARY armed 35 s · CPU avg 1.2 % (4.7 % of one core) · peak 2.7 % (11 % of one core) · PSS peak 151 MB · battery used 0.0 % (batt —) · data 830 KB (down 795 KB · up 35 KB) · wake loc
+Service destroyed (mode=OFF)
+   notifications for app after swipe: 7
+== D. force-stop while armed (00:19:28)
+pid 60 s after force-stop: '' · armed pref: name="armed" value="true"
+after opening the app: armed pref: name="armed" value="false"
+Disarmed by user (app closed): found armed with no service running (force-stopped?); tap ARM to watch again
+   posted notifications while disarmed after the force-stop: 0
+== E1. armed -> adb reboot (00:20:58)
+after boot: pid '4646' · armed pref: name="armed" value="true" · FGS: 1
+Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.BOOT_COMPLETED)
+Service created
+ARMED (live)
+ALERT[live] 00:21:28 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+== E2. DISARM -> adb reboot (00:21:47)
+60 s after boot: FGS running: 0 · armed pref: name="armed" value="false"
+DISARMED
+FLIGHT SUMMARY armed 19 s · CPU avg 0.57 % (2.3 % of one core) · peak 0.70 % (2.8 % of one core) · PSS peak 115 MB · battery used 0.0 % (batt —) · data 574 KB (down 558 KB · up 16 KB) · wake 
+Service destroyed (mode=OFF)
+Boot/update: armed=false, resume after power-off=true: not arming

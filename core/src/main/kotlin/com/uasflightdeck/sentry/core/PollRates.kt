@@ -2,7 +2,7 @@ package com.uasflightdeck.sentry.core
 
 /**
  * Low power (v0.4.0): poll slower while the bound aircraft is on the pad or absent. Owner's numbers: cloud traffic
- * and the drone feed every 5 s on the pad / absent, every 2 s airborne; the station link stays 1 s when present.
+ * and the drone feed every 5 s on the pad / absent, every 2 s airborne; the Overwatch station link stays 1 s when present.
  */
 object PollRates {
     data class Rates(val fleetMs: Long, val cloudMs: Long, val stationMs: Long, val lowPower: Boolean) {

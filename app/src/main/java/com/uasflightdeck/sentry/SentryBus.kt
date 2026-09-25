@@ -103,6 +103,7 @@ object SentryBus {
 
     @Synchronized fun log(msg: String, level: Int = Log.INFO) {
         Log.println(level, TAG, msg)
+        LogStore.append(System.currentTimeMillis(), msg)
         log.addFirst("${fmt.format(Date())}  $msg")
         while (log.size > 300) log.removeLast()
         _logFlow.value = log.toList()

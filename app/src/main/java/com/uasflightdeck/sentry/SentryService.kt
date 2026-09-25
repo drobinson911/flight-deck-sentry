@@ -43,6 +43,7 @@ import com.uasflightdeck.sentry.core.Ownship
 import com.uasflightdeck.sentry.core.OwnshipSource
 import com.uasflightdeck.sentry.core.Parsers
 import com.uasflightdeck.sentry.core.ReplayScenario
+import com.uasflightdeck.sentry.core.RestartPolicy
 import com.uasflightdeck.sentry.core.Severity
 import com.uasflightdeck.sentry.core.Target
 import com.uasflightdeck.sentry.core.TargetDisplay
@@ -75,11 +76,13 @@ import java.util.concurrent.ConcurrentHashMap
  *    AirSense contacts (when Flight Deck Air relays them), merged per hex.
  *  - station address: typed URL AND Overwatch UDP beacon discovery.
  *  - every poller has its own backoff; a watchdog restarts any poller (or the
- *    tick loop) that stops making progress; START_STICKY + opt-in boot start.
+ *    tick loop) that stops making progress. 0.4.2 (owner, [RestartPolicy]): armed stays armed until DISARM or
+ *    swipe-away; a crash / system kill restarts armed (START_STICKY), a power cycle re-arms (BootReceiver).
  */
 class SentryService : Service() {
 
     companion object {
+        private const val WAKE_TIMEOUT_MS = 12 * 60 * 60 * 1000L
         const val ACTION_ARM = "com.uasflightdeck.sentry.ARM"
         const val ACTION_DISARM = "com.uasflightdeck.sentry.DISARM"
         const val ACTION_REPLAY = "com.uasflightdeck.sentry.REPLAY"
@@ -94,6 +97,10 @@ class SentryService : Service() {
         const val EXTRA_SPEED = "speed"
         const val EXTRA_CLOUD_VIEW = "cloudView"
         const val EXTRA_CROSSING = "crossing"
+        /** ARM after a restart: "boot" (power cycle) or "unexpected" (crash / system kill); posts one housekeeping alert. */
+        const val EXTRA_RESTART = "restart"
+        const val RESTART_BOOT = "boot"
+        const val RESTART_UNEXPECTED = "unexpected"
 
         fun send(ctx: Context, action: String, extras: (Intent) -> Unit = {}) {
             val i = Intent(ctx, SentryService::class.java).setAction(action)
@@ -124,6 +131,10 @@ class SentryService : Service() {
     private var selector = DroneSelector()
     @Volatile private var mode = Mode.OFF
     private var wakeLock: PowerManager.WakeLock? = null
+    /** Wake lock held time (for Resources): closed spans + the open one. */
+    private var wakeHeldSinceMs: Long? = null
+    private var wakeHeldClosedMs = 0L
+    private lateinit var resources: ResourceMonitor
 
     // ── live data (immutable snapshots swapped atomically) ─────────────────
     @Volatile private var fdaDrones: List<Ownship> = emptyList()
@@ -166,13 +177,21 @@ class SentryService : Service() {
         val lostAfter = mapOf("fleet" to 15.0, "station" to 10.0, "cloud" to 20.0, "tfr" to 45 * 60.0)
         SystemText.HEALTH_SOURCES.forEach { (k, name) -> health.register(k, name, lostAfter.getValue(k)) }
         watchNetwork()
+        resources = ResourceMonitor(this, scope) { wakeHeldTotalMs() }
+        ResourceMonitor.setOn(settings.resourceMonitorOn)
         SentryBus.log("Service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         goForeground()
         when (intent?.action) {
-            ACTION_ARM -> { settings.armed = true; startLive() }
+            ACTION_ARM -> {
+                settings.armed = true; startLive()
+                when (intent.getStringExtra(EXTRA_RESTART)) {
+                    RESTART_BOOT -> restartAlert(RestartPolicy.ARMED_AFTER_BOOT)
+                    RESTART_UNEXPECTED -> restartAlert(RestartPolicy.RESTARTED)
+                }
+            }
             ACTION_DISARM -> { settings.armed = false; disarm() }
             ACTION_REPLAY -> startReplay(intent.getDoubleExtra(EXTRA_SPEED, settings.replaySpeed),
                 intent.getBooleanExtra(EXTRA_CLOUD_VIEW, settings.replayCloudView), intent.getBooleanExtra(EXTRA_CROSSING, settings.replayCrossing))
@@ -192,12 +211,32 @@ class SentryService : Service() {
                 if (nid != 0) runCatching { getSystemService(android.app.NotificationManager::class.java).cancel(nid) }
                 stopLaterIfIdle(3_000)
             }
-            null -> {   // sticky restart after process death
-                SentryBus.log("Service restarted by system (sticky); armed=${settings.armed}")
-                if (settings.armed) startLive() else stopSelfCleanly()
+            null -> when (val d = RestartPolicy.onSystemRestart(settings.armed)) {   // sticky: crash / system kill
+                is RestartPolicy.Decision.Rearm -> { SentryBus.log(d.log); startLive(); restartAlert(d.alertTitle) }
+                is RestartPolicy.Decision.Disarm -> { d.log?.let { SentryBus.log(it) }; stopSelfCleanly() }
+                RestartPolicy.Decision.Nothing -> stopSelfCleanly()
             }
         }
+        // Sticky: a crash or a system kill brings Sentry back armed. DISARM / swipe-away stop it for good (stopSelf).
         return START_STICKY
+    }
+
+    /** Swiped away from Recents while armed (or replaying): disarm and shut down cleanly; never restarted. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val d = RestartPolicy.onTaskRemoved(settings.armed, mode != Mode.OFF)
+        if (d is RestartPolicy.Decision.Disarm) {
+            d.log?.let { SentryBus.log(it) }
+            settings.armed = false
+            disarm()
+            stopSelfCleanly()
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
+    /** One housekeeping alert (sound + vibrate + banner) after a restart, so the pilot knows Sentry is back. */
+    private fun restartAlert(title: String) {
+        val now = System.currentTimeMillis()
+        deliver(OutputPlanner.plan(listOf(AlertEvent(now, EventKind.RESTARTED, Severity.CAUTION, title)), mutes, settings.alertStyle, now), "live", null, now)
     }
 
     private fun goForeground() {
@@ -226,12 +265,14 @@ class SentryService : Service() {
         startTickLoop()
         startWatchdog()
         SentryBus.log("ARMED (live)")
+        if (settings.resourceMonitorOn) resources.start()
         Updater.check(this)   // daily at most; quiet when offline or rate-limited
         deliver(OutputPlanner.plan(listOf(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, SystemText.ARMED)), mutes, settings.alertStyle, armedAtMs), "live", null, armedAtMs)
     }
 
     private fun disarm() {
         SentryBus.log("DISARMED")
+        resources.stop(summary = true)
         replayJob?.cancel(); replayJob = null
         stopLiveJobs()
         mode = Mode.OFF
@@ -350,7 +391,7 @@ class SentryService : Service() {
         beaconJob = scope.launch {
             try {
                 BeaconListener(this@SentryService) { url ->
-                    if (discoveredStation != url) SentryBus.log("Station beacon heard: $url")
+                    if (discoveredStation != url) SentryBus.log("Overwatch station beacon heard: $url")
                     discoveredStation = url
                 }.run()
             } catch (e: Exception) {
@@ -394,7 +435,7 @@ class SentryService : Service() {
         health.setEnabled("station", enabled, System.currentTimeMillis())
         if (!enabled) { stationTargets = emptyList(); return }
         val cands = listOfNotNull(Settings.normalizeStationBase(settings.stationUrl), discoveredStation).distinct()
-        if (cands.isEmpty()) throw IllegalStateException("no station address (type one or wait for beacon)")
+        if (cands.isEmpty()) throw IllegalStateException("no Overwatch station address (type one or wait for beacon)")
         var last: Exception? = null
         for (b in cands) {
             try {
@@ -403,11 +444,11 @@ class SentryService : Service() {
                 val now = System.currentTimeMillis()
                 stationTargets = Parsers.parseReadsb(text, now, "station")
                 health.ok("station", now, "${stationTargets.size} ac · ${now - t0} ms")
-                if (stationBaseInUse != b) { stationBaseInUse = b; SentryBus.log("Station: using $b") }
+                if (stationBaseInUse != b) { stationBaseInUse = b; SentryBus.log("Overwatch station link: using $b") }
                 return
             } catch (e: Exception) { last = e }
         }
-        throw last ?: IllegalStateException("station unreachable")
+        throw last ?: IllegalStateException("Overwatch station unreachable")
     }
 
     private suspend fun pollCloud() {
@@ -496,7 +537,7 @@ class SentryService : Service() {
         // The live countdown on banners that are on screen (in place; never re-posts a cancelled one).
         for (hex in notifier.activeHexes()) {
             val v = views.firstOrNull { it.hex == hex } ?: continue
-            if (v.tier >= Tier.ADVISORY) notifier.refresh(hex, v.displayId, Banner.traffic(v), v.tier)
+            if (v.tier >= Tier.ADVISORY) notifier.refresh(hex, v.displayId, Banner.forView(v), v.tier)
         }
     }
 
@@ -531,6 +572,11 @@ class SentryService : Service() {
         notifier.bannerMs = (settings.bannerSec * 1000).toLong().coerceIn(2_000, 30_000)
         notifier.ignoreEnabled = settings.ignoreEnabled; notifier.quietMin = settings.quietMin.toInt()
         startGps()   // always: the controller is the fallback protected position
+        // Settings → Resources switch applies without re-arming.
+        val resOn = settings.resourceMonitorOn
+        if (ResourceMonitor.state.value.on != resOn) ResourceMonitor.setOn(resOn)
+        if (resOn && settings.armed && !resources.running) resources.start()
+        else if (!resOn && resources.running) { resources.stop(summary = false); SentryBus.log("Resources: off in Settings") }
     }
 
     private fun trafficAgeSec(now: Long): Double {
@@ -653,12 +699,15 @@ class SentryService : Service() {
     }
 
     private fun housekeepingText(ev: AlertEvent): Pair<String, String> = when (ev.kind) {
-        EventKind.INTERNET_LOST -> "Internet offline" to "Cloud traffic, the drone feed and TFR updates need it. The station link (if any) keeps working."
+        EventKind.INTERNET_LOST -> "Internet offline" to "Cloud traffic, the drone feed and TFR updates need it. The Overwatch station link (if any) keeps working."
         EventKind.INTERNET_REGAINED -> "Internet back" to "Cloud traffic and the drone feed resume."
         EventKind.SELECTION -> "Bound aircraft acquired" to ev.text
         EventKind.OWNSHIP_LOST -> "Bound aircraft lost" to "${ev.text}. Sentry falls back to the controller cylinders if it doesn't return."
         EventKind.OWNSHIP_REGAINED, EventKind.OWNSHIP_ACQUIRED -> "Bound aircraft back" to ev.text
         EventKind.SOUNDS_ON -> "Sentry sounds on" to "Quiet is over: traffic sounds are back."
+        EventKind.RESTARTED -> ev.text to if (ev.text == RestartPolicy.ARMED_AFTER_BOOT)
+            "The controller restarted while Sentry was armed: it is armed and watching again." else
+            "Sentry stopped unexpectedly and restarted itself: it is armed and watching again."
         EventKind.PREFLIGHT -> ev.text to (SentryBus.preflight.value?.second?.filter { !it.ok }?.joinToString("\n") { "✗ ${it.name}: ${it.detail}" }
             ?.ifEmpty { "Everything is ready." } ?: "")
         else -> "Sentry" to ev.text
@@ -727,8 +776,8 @@ class SentryService : Service() {
                         else -> "fix" + (fix.accuracyM?.let { " ±${it.toInt()} m" } ?: "")
                     },
                     trafficOk = adsb.isSuccess || stationOk, trafficDetail = when {
-                        adsb.isSuccess -> "cloud ADS-B OK" + (near?.let { " · $it within ${settings.trafficRadiusNm.toInt()} nm" } ?: "") + if (stationOk) " · station OK" else ""
-                        stationOk -> "station OK · cloud: ${err(adsb.exceptionOrNull()!!)}"
+                        adsb.isSuccess -> "cloud ADS-B OK" + (near?.let { " · $it within ${settings.trafficRadiusNm.toInt()} nm" } ?: "") + if (stationOk) " · Overwatch station OK" else ""
+                        stationOk -> "Overwatch station OK · cloud: ${err(adsb.exceptionOrNull()!!)}"
                         else -> "cloud: ${err(adsb.exceptionOrNull()!!)}"
                     },
                     tfrOk = tfr.isSuccess, tfrDetail = tfr.fold({ "$it TFRs" }, { "TFR feed: ${err(it)}" }),
@@ -761,7 +810,7 @@ class SentryService : Service() {
 
     private fun publish(now: Long, own: Ownship?, sel: DroneSelector.Result, res: AlertEngine.StepResult, nTraffic: Int, sc: ReplayScenario?) {
         val wall = System.currentTimeMillis()
-        val rows = health.all().map { SourceRow(it.spoken.replace("T F R", "TFR"), health.stateOf(it, wall), health.ageSec(it.key, wall),
+        val rows = health.all().map { SourceRow(SystemText.rowLabel(it.key, it.spoken.replace("T F R", "TFR")), health.stateOf(it, wall), health.ageSec(it.key, wall),
             if (health.stateOf(it, wall) == HealthMonitor.State.OK) it.detail else (it.lastError ?: it.detail)) }
         val cfg = settings.engineConfig()
         val dcfg = settings.targetDisplay()
@@ -792,7 +841,7 @@ class SentryService : Service() {
                 InternetMonitor.State.UNKNOWN -> "CHECKING"
             } + if (internet.state != InternetMonitor.State.UNKNOWN && internet.sinceMs > 0) " " + ago(wall - internet.sinceMs) else "",
             internetOk = internet.state != InternetMonitor.State.OFFLINE,
-            pollRates = "${rates.label} · fleet ${rates.fleetMs / 1000} s · cloud ${rates.cloudMs / 1000} s · station ${rates.stationMs / 1000} s",
+            pollRates = "${rates.label} · fleet ${rates.fleetMs / 1000} s · cloud ${rates.cloudMs / 1000} s · Overwatch station ${rates.stationMs / 1000} s",
             muted = res.targets.mapNotNull { v -> mutes.label(v.hex, now)?.let { v.hex to it } }.toMap(),
             replayTitle = sc?.title,
             replayClock = sc?.let { replayClock(now, it) },
@@ -896,7 +945,18 @@ class SentryService : Service() {
     private fun acquireWakeLock() {
         val wl = wakeLock ?: (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FlightDeckSentry:watch").also { it.setReferenceCounted(false); wakeLock = it }
-        if (!wl.isHeld) wl.acquire(12 * 60 * 60 * 1000L)
+        if (!wl.isHeld) {
+            val now = System.currentTimeMillis()
+            // A span that ended by the 12 h timeout is closed at its timeout.
+            wakeHeldSinceMs?.let { wakeHeldClosedMs += minOf(now - it, WAKE_TIMEOUT_MS) }
+            wl.acquire(WAKE_TIMEOUT_MS)
+            wakeHeldSinceMs = now
+        }
+    }
+
+    private fun wakeHeldTotalMs(): Long {
+        val since = wakeHeldSinceMs ?: return wakeHeldClosedMs
+        return wakeHeldClosedMs + if (wakeLock?.isHeld == true) System.currentTimeMillis() - since else 0L
     }
 
     private fun stopSelfCleanly() {
@@ -907,6 +967,7 @@ class SentryService : Service() {
 
     override fun onDestroy() {
         SentryBus.log("Service destroyed (mode=$mode)")
+        resources.stop(summary = true)
         stopLiveJobs()
         replayJob?.cancel()
         runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }

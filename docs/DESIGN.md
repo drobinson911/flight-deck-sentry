@@ -88,8 +88,10 @@ closing) re-triggers.
   and drop per-aircraft mutes. *Interpretation:* "all mutes return instantly on escalation" is applied to Quiet
   5 min as "an escalation of any aircraft sounds through Quiet" without ending Quiet, so Quiet still silences the
   repeats of everything else in busy airspace.
-- Advisory is banner-only unless the style is **Loud** (fleet simulation: 87 of 98 false alarms were the advisory
-  ring alone). Caution is banner-only in Quiet.
+- 0.4.2 (owner decision; the pilot may be on an automated mission, not holding the controller): in **Standard** every
+  traffic alert sounds; the advisory entry is one soft tone (SHORT cue) + short vibrate, its repeats banner-only.
+  **Quiet**: advisory and caution banner-only (0.4.0's Standard advisory rule; fleet simulation: 87 of 98 false alarms
+  were the advisory ring alone). **Loud**: advisory entry full sound, repeats sound.
 - **Sounds** by file name from the device library (`MediaStore.Audio.Media.INTERNAL_CONTENT_URI`, `DISPLAY_NAME`):
   URIs differ per device, names are stable. The defaults were chosen on the API 29 image for distinctness and a single
   onset each (Alarm_Beep_03 has two beeps, so the warning default is Oxygen). Resolution chain: picked → level
@@ -124,7 +126,7 @@ acquired ("Watching …") / lost (first "Drone position lost" only; the "Waiting
 
 ## Low power and latency
 
-`PollRates.of(boundAirborne)`: airborne 2 / 2 s, on the pad or absent 5 / 5 s, station 1 s. Pollers read the rate each
+`PollRates.of(boundAirborne)`: airborne 2 / 2 s, on the pad or absent 5 / 5 s, Overwatch station link 1 s. Pollers read the rate each
 cycle. Latency: `AlertEvent.crossedAtMs` is interpolated from each tier's margin between the two ticks around the
 crossing; the service logs detection + (sound start − tick) as "alert latency x.x s". `LatencyTest` checks both that
 and the 1 s engine against a 10 Hz engine on the same data (< 2 s including a 250 ms sound-start budget).
@@ -176,3 +178,24 @@ live state every tick, the JSON depth guard, self-update from GitHub releases (n
 removes voice by owner decision (a distinct sound + a glanceable banner, then a look at AirSense / ForeFlight, is
 faster to act on over rotor and road noise, and doesn't compete with the radio). The voice bank, its generator
 (`tools/voicebank`) and the grammar tests are deleted; the sentence formatting survives as the banner text.
+
+## 0.4.2 additions
+
+- **PASSING hold.** `TargetView.passing` (+ `closestNm`) is set once PASSING has been announced and the aircraft has not
+  re-converged. `Banner.forView` renders it as "● PASSING · <id> · Diverging" and the service's per-second in-place
+  refresh uses it, so the 0.5 nm ring backstop no longer re-titles a passing aircraft "⚠ WARNING · Not closing"; step-downs
+  after PASSING also carry the PASSING banner. Re-convergence (range rate closing beyond the 2.5 m/s dead band) is an
+  escalation at the current tier, as before. `PassingTitleTest` (three demo variants + a synthetic turn-back).
+- **Standard style sounds every alert.** Advisory entry (the escalation to advisory) = SHORT cue + 150 ms vibrate;
+  advisory repeats banner-only unless Loud; Quiet = advisory and caution banner-only (`OutputPlanner`).
+- **Durations in words** (`Banner.duration`): "43 s", "1 min 28 s", "2 min", "1 h 5 min".
+- **Resources** (`core/Resources.kt` + `app/ResourceMonitor`): 10 s samples of /proc/self/stat utime+stime, Debug.getPss,
+  Runtime heap, BatteryManager capacity + charge counter + charging, TrafficStats uid bytes, wake-lock held time; the
+  monitor's own thread CPU per sample. Window averages are time-weighted; flight averages come from first/last counters.
+- **RestartPolicy** (`core/RestartPolicy.kt`): START_STICKY + null-intent restart re-arms when the flag is set;
+  onTaskRemoved disarms + stops; BOOT_COMPLETED / MY_PACKAGE_REPLACED re-arm when armed and "Resume armed after
+  power-off" is on; opening the app with the flag set and no service = force-stop (Android 11+ asks
+  ApplicationExitInfo; Android 10 can't tell, so it stays disarmed).
+- **Share log** (`core/ShareLog.kt` + `app/LogStore`): every log line is also appended to files/sentry-log.txt
+  ("ms\ttext"), trimmed to 24 h / 4 MB; the shared text is redacted (drone callsigns from history and from the
+  "Watching …" / pre-flight phrases, the token, URL hosts, e-mail and IPv4 addresses).

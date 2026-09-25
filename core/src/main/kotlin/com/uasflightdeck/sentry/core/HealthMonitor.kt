@@ -1,8 +1,8 @@
 package com.uasflightdeck.sentry.core
 
 /**
- * Per-source link health with spoken transitions ("station link lost" /
- * "station link regained"). The state shown in the UI is computed from the
+ * Per-source link health with spoken transitions ("Overwatch station link lost" /
+ * "Overwatch station link regained"). The state shown in the UI is computed from the
  * last SUCCESS time at query time, never from the last event.
  */
 class HealthMonitor {
