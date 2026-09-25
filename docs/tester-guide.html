@@ -21,6 +21,7 @@ table{border-collapse:collapse;width:100%;font-size:10pt;margin:4pt 0 8pt} td,th
 <p>Sentry watches the airspace around <b>your drone</b> and <b>notifies you</b> on the controller: a sound, a vibration, and a banner over the flight app. It does not show a map and does not deconflict for you. When it fires, you look at your map or AirSense and decide. It never takes the screen while you're flying, never installs updates while armed, and only ducks the flight app's audio for the second a tone plays.</p>
 <p>It knows where your drone is from your organization's drone feed, and where manned aircraft are from public ADS-B (plus a local receiver if your truck has one). If the drone isn't in the feed yet (DroneSense closed, not signed in, or no mission selected), it protects the space around the controller instead.</p>
 
+<div class="box"><b>Requirements.</b> The controller must have an <b>internet connection</b> (cell or Wi-Fi) the whole flight: that is how Sentry gets your drone's position and the traffic. It only works while you are <b>flying in DroneSense</b> (open, signed in, mission selected); flying in any other app, your drone is not in the feed and Sentry protects the space around the controller instead. Android only (the RC Plus).</div>
 <h2>2. Install (5 minutes)</h2>
 <ol>
 <li>On the RC Plus, open the browser and go to <span class="mono">github.com/drobinson911/flight-deck-sentry/releases/latest</span>, tap <b>flight-deck-sentry.apk</b>. Allow "install unknown apps" when Android asks. (If you had a version older than 0.3.0, uninstall it first.)</li>
