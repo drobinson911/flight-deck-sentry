@@ -91,10 +91,28 @@ class FieldRulesTest {
 
     @Test fun everyStoredDefaultIsValidInItsOwnRange() {
         // A fresh install must not open Settings with red fields.
-        val defaults = listOf(3.0 to ring, 1.0 to ring, 0.5 to ring, 2000.0 to FieldRules.CEILING_ABOVE, 300.0 to FieldRules.BARO_CORRECTION,
-            60.0 to FieldRules.CPA_HORIZON, 10.0 to FieldRules.TFR_RELEVANCE, 10.0 to FieldRules.TARGETS_AIRCRAFT,
-            15.0 to FieldRules.TARGETS_CONTROLLER, 18_000.0 to FieldRules.TARGETS_CEILING, 30.0 to FieldRules.TRAFFIC_RADIUS,
-            2.0 to FieldRules.CIRCLE_RADIUS)
+        val c = com.uasflightdeck.sentry.core.SentryConfig()
+        val defaults = listOf(c.advisoryNm to ring, c.cautionNm to ring, c.warningNm to ring, c.ceilingAboveFt to FieldRules.CEILING_ABOVE,
+            c.baroCorrectionFt to FieldRules.BARO_CORRECTION, c.tfrRelevanceNm to FieldRules.TFR_RELEVANCE, c.zoneAlertNm to FieldRules.ZONE_ALERT_NM,
+            10.0 to FieldRules.TARGETS_AIRCRAFT, 15.0 to FieldRules.TARGETS_CONTROLLER, 18_000.0 to FieldRules.TARGETS_CEILING,
+            30.0 to FieldRules.TRAFFIC_RADIUS, 2.0 to FieldRules.CIRCLE_RADIUS,
+            // prediction + cadence (0.4.0)
+            c.trackSec to FieldRules.PRED_SEC, c.warningSec to FieldRules.PRED_SEC, c.collisionSec to FieldRules.PRED_SEC,
+            c.trackMissNm to FieldRules.PRED_MISS_NM, c.warningMissNm to FieldRules.PRED_MISS_NM, c.collisionMissFt to FieldRules.COLLISION_MISS_FT,
+            c.collisionVertFt to FieldRules.COLLISION_VERT_FT, c.corridorDeg to FieldRules.CORRIDOR_DEG,
+            c.warnFarSec to FieldRules.REPEAT_SEC, c.warnNearSec to FieldRules.REPEAT_SEC, c.warnCloseSec to FieldRules.REPEAT_SEC,
+            c.cautionRepeatSec to FieldRules.REPEAT_SEC, c.trackUpdateSec to FieldRules.REPEAT_SEC, c.collisionRepeatSec to FieldRules.COLLISION_REPEAT_SEC,
+            5.0 to FieldRules.BANNER_SEC, 60.0 to FieldRules.GOT_IT_SEC, 5.0 to FieldRules.QUIET_MIN)
         for ((v, spec) in defaults) assertTrue("$v in ${spec.rangeText}", FieldRules.parseNumber(FieldRules.fmt(v), spec) is Parsed.Ok)
+        assertTrue(c.predictionValid())
+        assertTrue(FieldRules.predictionOrdered(c.trackSec, c.warningSec, c.collisionSec, c.trackMissNm, c.warningMissNm))
+    }
+
+    @Test fun predictionMustBeOrdered() {
+        assertTrue(FieldRules.predictionOrdered(180.0, 90.0, 60.0, 1.0, 0.5))
+        assertTrue(FieldRules.predictionOrdered(120.0, 60.0, 60.0, 1.0, 0.5))
+        assertFalse(FieldRules.predictionOrdered(60.0, 90.0, 30.0, 1.0, 0.5))    // warning longer than track
+        assertFalse(FieldRules.predictionOrdered(120.0, 60.0, 90.0, 1.0, 0.5))   // collision longer than warning
+        assertFalse(FieldRules.predictionOrdered(120.0, 60.0, 60.0, 0.4, 0.5))   // track miss inside warning miss
     }
 }

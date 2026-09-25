@@ -1,3 +1,0 @@
-# Clips no rendered candidate was transcribed as the intended word (small.en ASR; letters, directions and
-# trend words judged in context, stitched between their bank neighbours). Empty = every clip passed.
-# The test that matters is the stitched sentences: gen.py --check core/build/voice-sentences.tsv

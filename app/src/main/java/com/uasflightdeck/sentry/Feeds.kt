@@ -15,8 +15,12 @@ import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
-/** Thin HTTP layer. Every call has hard timeouts: a hung socket must never stall a poller. */
-class Http {
+/**
+ * Thin HTTP layer. Every call has hard timeouts: a hung socket must never stall a poller.
+ * [onResponse] fires on ANY HTTP response (a 401 or 404 still proves the internet works), [onNetFail] when no
+ * response came back at all: the internet monitor's evidence.
+ */
+class Http(private val onResponse: () -> Unit = {}, private val onNetFail: () -> Unit = {}) {
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
@@ -31,7 +35,9 @@ class Http {
             .header("User-Agent", UA)
             .header("Accept", "application/json")
         headers.forEach { (k, v) -> b.header(k, v) }
-        client.newCall(b.build()).execute().use { r ->
+        val resp = try { client.newCall(b.build()).execute() } catch (e: IOException) { onNetFail(); throw e }
+        resp.use { r ->
+            onResponse()
             if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
             r.body?.string() ?: throw IOException("empty body")
         }

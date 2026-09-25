@@ -18,7 +18,18 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.uasflightdeck.sentry.core.AlertEngine
 import com.uasflightdeck.sentry.core.AlertEvent
-import com.uasflightdeck.sentry.core.SystemPhrases
+import com.uasflightdeck.sentry.core.AlertLatency
+import com.uasflightdeck.sentry.core.Banner
+import com.uasflightdeck.sentry.core.Cue
+import com.uasflightdeck.sentry.core.InternetMonitor
+import com.uasflightdeck.sentry.core.MuteBook
+import com.uasflightdeck.sentry.core.OutputPlanner
+import com.uasflightdeck.sentry.core.Phase
+import com.uasflightdeck.sentry.core.PollRates
+import com.uasflightdeck.sentry.core.Preflight
+import com.uasflightdeck.sentry.core.SoundLevel
+import com.uasflightdeck.sentry.core.SystemText
+import com.uasflightdeck.sentry.core.Tier
 import com.uasflightdeck.sentry.core.ControllerFix
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SelectionMode
@@ -73,10 +84,16 @@ class SentryService : Service() {
         const val ACTION_DISARM = "com.uasflightdeck.sentry.DISARM"
         const val ACTION_REPLAY = "com.uasflightdeck.sentry.REPLAY"
         const val ACTION_REPLAY_STOP = "com.uasflightdeck.sentry.REPLAY_STOP"
-        const val ACTION_TEST = "com.uasflightdeck.sentry.TEST"
-        const val ACTION_VOICE_TEST = "com.uasflightdeck.sentry.VOICE_TEST"
+        const val ACTION_PREFLIGHT = "com.uasflightdeck.sentry.PREFLIGHT"
+        /** Banner actions (never open the app). */
+        const val ACTION_GOT_IT = "com.uasflightdeck.sentry.GOT_IT"
+        const val ACTION_IGNORE = "com.uasflightdeck.sentry.IGNORE"
+        const val ACTION_QUIET = "com.uasflightdeck.sentry.QUIET"
+        /** Housekeeping banner tap: dismiss it. */
+        const val ACTION_DISMISS = "com.uasflightdeck.sentry.DISMISS"
         const val EXTRA_SPEED = "speed"
         const val EXTRA_CLOUD_VIEW = "cloudView"
+        const val EXTRA_CROSSING = "crossing"
 
         fun send(ctx: Context, action: String, extras: (Intent) -> Unit = {}) {
             val i = Intent(ctx, SentryService::class.java).setAction(action)
@@ -87,8 +104,21 @@ class SentryService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var settings: Settings
-    private val http = Http()
-    private lateinit var voice: AlertVoice
+    private val http = Http(onResponse = { lastReachOkMs = System.currentTimeMillis() }, onNetFail = { lastReachFailMs = System.currentTimeMillis() })
+    private lateinit var sound: SoundPlayer
+    private lateinit var notifier: Notifier
+    private val mutes = MuteBook()
+    private val internet = InternetMonitor()
+    @Volatile private var networkUp = true
+    @Volatile private var lastReachOkMs: Long? = null
+    @Volatile private var lastReachFailMs: Long? = null
+    private var netCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    /** Poll rates in use (low power while the bound aircraft is on the pad or absent). */
+    @Volatile private var rates = PollRates.LOW_POWER
+    /** The engine's clock at the last tick (sim time in a replay): mutes run on it. */
+    @Volatile private var clockNowMs = System.currentTimeMillis()
+    @Volatile private var lastViews: List<AlertEngine.TargetView> = emptyList()
+    @Volatile private var replaySpeed = 1.0
     private val health = HealthMonitor()
     private var engine = AlertEngine(externalSelection = true)
     private var selector = DroneSelector()
@@ -111,7 +141,8 @@ class SentryService : Service() {
     private var armedAtMs = 0L
 
     // ── supervised pollers ──────────────────────────────────────────────────
-    private class Poller(val name: String, val intervalMs: Long, val maxBackoffMs: Long, val block: suspend () -> Unit) {
+    private class Poller(val name: String, val interval: () -> Long, val maxBackoffMs: Long, val block: suspend () -> Unit) {
+        val intervalMs get() = interval()
         @Volatile var heartbeat = 0L
         var job: Job? = null
     }
@@ -129,9 +160,12 @@ class SentryService : Service() {
     override fun onCreate() {
         super.onCreate()
         settings = Settings(this)
-        voice = AlertVoice(this, scope).also { it.start() }
-        val lostAfter = mapOf("fleet" to 10.0, "station" to 10.0, "cloud" to 20.0, "tfr" to 45 * 60.0)
-        SystemPhrases.HEALTH_SOURCES.forEach { (k, spoken) -> health.register(k, spoken, lostAfter.getValue(k)) }
+        settings.migrate().forEach { SentryBus.log("Settings: $it") }
+        sound = SoundPlayer(this)
+        notifier = Notifier(this)
+        val lostAfter = mapOf("fleet" to 15.0, "station" to 10.0, "cloud" to 20.0, "tfr" to 45 * 60.0)
+        SystemText.HEALTH_SOURCES.forEach { (k, name) -> health.register(k, name, lostAfter.getValue(k)) }
+        watchNetwork()
         SentryBus.log("Service created")
     }
 
@@ -141,19 +175,22 @@ class SentryService : Service() {
             ACTION_ARM -> { settings.armed = true; startLive() }
             ACTION_DISARM -> { settings.armed = false; disarm() }
             ACTION_REPLAY -> startReplay(intent.getDoubleExtra(EXTRA_SPEED, settings.replaySpeed),
-                intent.getBooleanExtra(EXTRA_CLOUD_VIEW, settings.replayCloudView))
+                intent.getBooleanExtra(EXTRA_CLOUD_VIEW, settings.replayCloudView), intent.getBooleanExtra(EXTRA_CROSSING, settings.replayCrossing))
             ACTION_REPLAY_STOP -> stopReplay("stopped")
-            ACTION_TEST -> {
-                dispatch(AlertEvent(System.currentTimeMillis(), EventKind.TEST, Severity.WARNING,
-                    text = SystemPhrases.TEST_TEXT, speech = SystemPhrases.TEST_SPEECH), "test")
-                if (mode == Mode.OFF) scope.launch { delay(15_000); if (mode == Mode.OFF) stopSelfCleanly() }
+            ACTION_PREFLIGHT -> { runPreflight(); stopLaterIfIdle(20_000) }
+            ACTION_GOT_IT, ACTION_IGNORE -> {
+                val hex = intent.getStringExtra("hex"); val id = intent.getStringExtra("id") ?: hex
+                if (hex != null && mode != Mode.OFF) {
+                    val miss = lastViews.firstOrNull { it.hex == hex }?.missNm
+                    pilotAction(if (intent.action == ACTION_GOT_IT) mutes.gotIt(hex, id!!, clockNowMs, miss) else mutes.ignore(hex, id!!, clockNowMs, miss))
+                }
+                stopLaterIfIdle(3_000)
             }
-            ACTION_VOICE_TEST -> {
-                syncVoice()
-                SentryBus.log("Voice test through ${voice.engine} (${voice.status})")
-                dispatch(AlertEvent(System.currentTimeMillis(), EventKind.TEST, Severity.WARNING,
-                    text = SystemPhrases.VOICE_TEST_TEXT, speech = SystemPhrases.VOICE_TEST_SPEECH), "voice-test")
-                if (mode == Mode.OFF) scope.launch { delay(15_000); if (mode == Mode.OFF) stopSelfCleanly() }
+            ACTION_QUIET -> { if (mode != Mode.OFF) pilotAction(mutes.quiet(clockNowMs)); stopLaterIfIdle(3_000) }
+            ACTION_DISMISS -> {
+                val nid = intent.getIntExtra("nid", 0)
+                if (nid != 0) runCatching { getSystemService(android.app.NotificationManager::class.java).cancel(nid) }
+                stopLaterIfIdle(3_000)
             }
             null -> {   // sticky restart after process death
                 SentryBus.log("Service restarted by system (sticky); armed=${settings.armed}")
@@ -180,6 +217,7 @@ class SentryService : Service() {
         mode = Mode.LIVE
         engine = AlertEngine(settings.engineConfig(), externalSelection = true)
         selector = DroneSelector(settings.selectorConfig()); loggedBound = ""
+        internet.reset()
         armedAtMs = System.currentTimeMillis()
         health.setEnabled("fleet", true, armedAtMs)
         health.setEnabled("tfr", true, armedAtMs)
@@ -189,7 +227,7 @@ class SentryService : Service() {
         startWatchdog()
         SentryBus.log("ARMED (live)")
         Updater.check(this)   // daily at most; quiet when offline or rate-limited
-        dispatch(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, SystemPhrases.ARMED), "live")
+        deliver(OutputPlanner.plan(listOf(AlertEvent(armedAtMs, EventKind.SYSTEM, Severity.INFO, SystemText.ARMED)), mutes, settings.alertStyle, armedAtMs), "live", null, armedAtMs)
     }
 
     private fun disarm() {
@@ -197,7 +235,9 @@ class SentryService : Service() {
         replayJob?.cancel(); replayJob = null
         stopLiveJobs()
         mode = Mode.OFF
-        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemPhrases.DISARMED))
+        sound.stop()
+        notifier.cancelAll()
+        SentryBus.addCallout(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemText.DISARMED), hms.format(Date()), false)
         publishOff()
         scope.launch { delay(4000); if (mode == Mode.OFF) stopSelfCleanly() }
     }
@@ -212,10 +252,36 @@ class SentryService : Service() {
     }
 
     private fun startPollers() {
-        addPoller(Poller("fleet", 2000, 15_000) { pollFleet() })
-        addPoller(Poller("station", 1000, 10_000) { pollStation() })
-        addPoller(Poller("cloud", 5000, 30_000) { pollCloud() })
-        addPoller(Poller("tfr", 10 * 60_000L, 10 * 60_000L) { pollTfrs() })
+        // Low power (0.4.0): fleet + cloud every 5 s while the bound aircraft is on the pad or absent, 2 s airborne.
+        addPoller(Poller("fleet", { rates.fleetMs }, 15_000) { pollFleet() })
+        addPoller(Poller("station", { rates.stationMs }, 10_000) { pollStation() })
+        addPoller(Poller("cloud", { rates.cloudMs }, 30_000) { pollCloud() })
+        addPoller(Poller("tfr", { 10 * 60_000L }, 10 * 60_000L) { pollTfrs() })
+        // Internet reachability: any HTTP response from the worker in the last 15 s counts; else probe it.
+        addPoller(Poller("net", { 15_000L }, 15_000) { probeInternet() })
+    }
+
+    private suspend fun probeInternet() {
+        val ok = lastReachOkMs
+        if (ok != null && System.currentTimeMillis() - ok < 15_000) return
+        runCatching { http.get(base() + "/") }      // a 404 still proves the internet works (Http.onResponse)
+    }
+
+    private fun watchNetwork() {
+        val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        fun update() {
+            networkUp = runCatching {
+                val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+                caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }.getOrDefault(true)
+        }
+        update()
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(n: android.net.Network) = update()
+            override fun onLost(n: android.net.Network) = update()
+            override fun onCapabilitiesChanged(n: android.net.Network, c: android.net.NetworkCapabilities) = update()
+        }
+        runCatching { cm.registerDefaultNetworkCallback(cb); netCallback = cb }
     }
 
     private fun addPoller(p: Poller) {
@@ -410,8 +476,24 @@ class SentryService : Service() {
         val zones = tfrZones + loadFileZones() + circleZone(own) + cylinderZones(sel)
         val res = engine.step(now, own, traffic, zones, trafficAgeSec(now))
         val hEvents = health.step(now)
-        (sel.events + res.events + hEvents).forEach { dispatch(it, "live") }
+        rates = PollRates.of(if (sel.mode == SelectionMode.PINNED) sel.drone?.isAirborne else null)
+        val net = internet.step(now, networkUp, lastReachOkMs, lastReachFailMs)
+        output(now, sel.events + res.events + hEvents + listOfNotNull(net), res.targets, "live", null)
         publish(now, own, sel, res, traffic.size, null)
+    }
+
+    /** Mutes, the output plan, then sounds / vibration / banners / log, and the per-second banner refresh. */
+    private fun output(now: Long, events: List<AlertEvent>, views: List<AlertEngine.TargetView>, origin: String, sc: ReplayScenario?) {
+        clockNowMs = now; lastViews = views
+        val tickWall = System.currentTimeMillis()
+        val (log, soundsOn) = mutes.step(now, views, events)
+        log.forEach { pilotAction(it, logOnly = true) }
+        deliver(OutputPlanner.plan(events + listOfNotNull(soundsOn), mutes, settings.alertStyle, now), origin, sc, tickWall)
+        // The live countdown on banners that are on screen (in place; never re-posts a cancelled one).
+        for (hex in notifier.activeHexes()) {
+            val v = views.firstOrNull { it.hex == hex } ?: continue
+            if (v.tier >= Tier.ADVISORY) notifier.refresh(hex, v.displayId, Banner.traffic(v), v.tier)
+        }
     }
 
     /** Controller cylinders, only while protecting the controller (a watched drone uses its own rings). */
@@ -441,14 +523,10 @@ class SentryService : Service() {
 
     private fun syncSettings() {
         engine.config = settings.engineConfig()
-        syncVoice()
+        mutes.gotItSec = settings.gotItSec; mutes.quietSec = settings.quietMin * 60
+        notifier.bannerMs = (settings.bannerSec * 1000).toLong().coerceIn(2_000, 30_000)
+        notifier.ignoreEnabled = settings.ignoreEnabled; notifier.quietMin = settings.quietMin.toInt()
         startGps()   // always: the controller is the fallback protected position
-    }
-
-    private fun syncVoice() {
-        voice.enabled = settings.voiceOn
-        voice.volume = settings.volume.toFloat()
-        voice.forceBundled = BuildConfig.DEBUG && settings.voiceForceBundled
     }
 
     private fun trafficAgeSec(now: Long): Double {
@@ -482,19 +560,20 @@ class SentryService : Service() {
     }
 
     // ── replay ──────────────────────────────────────────────────────────────
-    private fun startReplay(speed: Double, cloudView: Boolean) {
+    private fun startReplay(speed: Double, cloudView: Boolean, crossing: Boolean) {
         acquireWakeLock()
         replayJob?.cancel()
         val sc = try {
             fun a(n: String) = assets.open("replay/$n").bufferedReader().use { it.readText() }
-            DemoReplayFixture.load(a("demo_drone.json"), a("n388km_merged.json"), a("tfr_demo.json"), cloudView)
+            DemoReplayFixture.load(a("demo_drone.json"), a("n388km_merged.json"), a("tfr_demo.json"), cloudView, crossing)
         } catch (e: Exception) { SentryBus.log("Replay load failed: $e"); return }
         mode = Mode.REPLAY
         val sp = speed.coerceIn(0.25, 16.0)
+        replaySpeed = sp
         val eng = AlertEngine(settings.engineConfig(), externalSelection = true)
         val sel = DroneSelector(settings.selectorConfig())
         SentryBus.log("REPLAY start: ${sc.title} at ${sp}x")
-        voice.say(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemPhrases.REPLAY_STARTING))
+        SentryBus.addCallout(AlertEvent(System.currentTimeMillis(), EventKind.SYSTEM, Severity.INFO, SystemText.REPLAY_STARTING + ": " + sc.title), hms.format(Date()), true)
         if (tickJob == null) startTickLoop()
         replayJob = scope.launch {
             var t = sc.startMs
@@ -512,7 +591,8 @@ class SentryService : Service() {
                 val own = s.ownship
                 val traffic = sc.trafficAt(t)
                 val res = eng.step(t, own, traffic, sc.zones + cylinderZones(s), 0.0)
-                (s.events + res.events).forEach { dispatch(it, "replay", sc) }
+                rates = PollRates.of(if (s.mode == SelectionMode.PINNED) s.drone?.isAirborne else null)
+                output(t, s.events + res.events, res.targets, "replay", sc)
                 publish(t, own, s, res, traffic.size, sc)
                 t += 1000
                 delay(maxOf(10L, (1000.0 / sp).toLong() - (System.currentTimeMillis() - t0)))
@@ -523,6 +603,8 @@ class SentryService : Service() {
 
     private fun stopReplay(why: String) {
         replayJob?.cancel(); replayJob = null
+        replaySpeed = 1.0
+        notifier.cancelAll()
         SentryBus.log("REPLAY $why")
         if (settings.armed) { mode = Mode.OFF; startLive() } else {
             mode = Mode.OFF; publishOff()
@@ -533,12 +615,139 @@ class SentryService : Service() {
     // ── output ──────────────────────────────────────────────────────────────
     private val hms = SimpleDateFormat("HH:mm:ss", Locale.US)
 
-    private fun dispatch(ev: AlertEvent, origin: String, sc: ReplayScenario? = null) {
-        val clock = if (sc != null) replayClock(ev.timeMs, sc) else hms.format(Date(ev.timeMs))
-        SentryBus.addCallout(ev, clock, sc != null)
-        SentryBus.log("CALLOUT[$origin] $clock ${ev.severity.label.uppercase()} ${ev.kind}: ${ev.text}")
-        voice.say(ev)
-        Notifier.alert(this, ev)
+    private fun deliver(outputs: List<OutputPlanner.Output>, origin: String, sc: ReplayScenario?, tickWallMs: Long) {
+        for (o in outputs) {
+            val ev = o.event
+            val clock = if (sc != null) replayClock(ev.timeMs, sc) else hms.format(Date(ev.timeMs))
+            val snd = when {
+                o.sounds -> "${o.level!!.key}/${o.cue.name.lowercase()}"
+                o.suppressed != null -> "silent (${o.suppressed})"
+                else -> "-"
+            }
+            val sScore = ev.closenessS?.let { String.format(Locale.US, " S=%.2f", it) } ?: ""
+            SentryBus.addCallout(ev, clock, sc != null, if (o.sounds) snd else o.suppressed?.let { "silent: $it" } ?: "")
+            SentryBus.log("ALERT[$origin] $clock ${(ev.tier?.label ?: ev.severity.label).uppercase()} ${ev.kind}/${ev.phase} " +
+                "sound=$snd banner=${o.banner}: ${ev.banner?.oneLine ?: ev.text}$sScore")
+            if (o.sounds) {
+                val level = o.level!!
+                val speed = if (sc != null) replaySpeed else 1.0
+                sound.play(level, o.cue, settings.soundUri(level), settings.soundVolume(level)) { startWall, what ->
+                    val lat = if (ev.phase == Phase.ESCALATION) AlertLatency.ms(ev, tickWallMs, startWall, speed) else null
+                    SentryBus.log("SOUND $what" + (lat?.let { " · ${AlertLatency.label(it)} (${ev.tier?.label?.uppercase()} ${ev.hex ?: ""})" } ?: ""))
+                }
+                if (settings.vibrationOn) sound.vibrate(level)
+            }
+            if (OutputPlanner.isTrafficKind(ev.kind)) {
+                val hex = ev.hex ?: continue
+                val id = lastViews.firstOrNull { it.hex == hex }?.displayId ?: ev.text.substringBefore(' ')
+                notifier.traffic(hex, id, ev.banner, ev.tier, o.banner)
+            } else if (o.banner == OutputPlanner.BannerAction.POPUP) {
+                val (title, text) = housekeepingText(ev)
+                notifier.housekeeping(ev.kind.name, title, text)
+            }
+        }
+    }
+
+    private fun housekeepingText(ev: AlertEvent): Pair<String, String> = when (ev.kind) {
+        EventKind.INTERNET_LOST -> "Internet offline" to "Cloud traffic, the drone feed and TFR updates need it. The station link (if any) keeps working."
+        EventKind.INTERNET_REGAINED -> "Internet back" to "Cloud traffic and the drone feed resume."
+        EventKind.SELECTION -> "Bound aircraft acquired" to ev.text
+        EventKind.OWNSHIP_LOST -> "Bound aircraft lost" to "${ev.text}. Sentry falls back to the controller cylinders if it doesn't return."
+        EventKind.OWNSHIP_REGAINED, EventKind.OWNSHIP_ACQUIRED -> "Bound aircraft back" to ev.text
+        EventKind.SOUNDS_ON -> "Sentry sounds on" to "Quiet is over: traffic sounds are back."
+        EventKind.PREFLIGHT -> ev.text to (SentryBus.preflight.value?.second?.filter { !it.ok }?.joinToString("\n") { "✗ ${it.name}: ${it.detail}" }
+            ?.ifEmpty { "Everything is ready." } ?: "")
+        else -> "Sentry" to ev.text
+    }
+
+    /** A pilot action (banner button) or a mute ending: log + "Last alerts", and the status line picks it up. */
+    private fun pilotAction(line: String, logOnly: Boolean = false) {
+        SentryBus.log("ACTION $line")
+        val now = System.currentTimeMillis()
+        SentryBus.addCallout(AlertEvent(now, EventKind.SYSTEM, Severity.INFO, line), hms.format(Date(now)), mode == Mode.REPLAY, if (logOnly) "" else "pilot")
+    }
+
+    private fun stopLaterIfIdle(ms: Long) {
+        if (mode == Mode.OFF) scope.launch { delay(ms); if (mode == Mode.OFF && !SentryBus.preflightRunning.value) stopSelfCleanly() }
+    }
+
+    // ── pre-flight check ───────────────────────────────────────────────────
+    /**
+     * Internet, fleet token, drone feed, bound aircraft, controller GPS, traffic feed, TFR data, notifications +
+     * heads-up, battery optimisation, sound (plays the warning sound), vibration. One-shot fetches, so it works
+     * armed or not. Result: SentryBus.preflight (the screen's list) + a housekeeping alert.
+     */
+    private fun runPreflight() {
+        if (SentryBus.preflightRunning.value) return
+        SentryBus.preflightRunning.value = true
+        SentryBus.log("Pre-flight: running")
+        scope.launch {
+            try {
+                val now0 = System.currentTimeMillis()
+                val token = settings.fleetToken
+                val hdr = mapOf("X-Fleet-Token" to token)
+                fun err(e: Throwable) = e.message ?: e.javaClass.simpleName
+                val ds = if (token.isBlank()) null else runCatching { Parsers.parseDroneSense(http.get(base() + "/api/live/dronesense", hdr), now0) }
+                val fda = if (token.isBlank()) null else runCatching { Parsers.parseOurDrones(http.get(base() + "/api/live/our-drones", hdr), now0).drones }
+                val errs = listOfNotNull(ds?.exceptionOrNull(), fda?.exceptionOrNull()).map { err(it) }
+                val rejected = errs.firstOrNull { Regex("HTTP (401|403)").containsMatchIn(it) }
+                val anyOk = ds?.isSuccess == true || fda?.isSuccess == true
+                val tokenAccepted: Boolean? = when { token.isBlank() -> null; anyOk -> true; rejected != null -> false; else -> false }
+                val feed = FleetStatus.of(token.isBlank(),
+                    FleetStatus.Fetch(fda?.getOrNull()?.size, fda?.exceptionOrNull()?.let { err(it) }),
+                    FleetStatus.Fetch(ds?.getOrNull()?.size, ds?.exceptionOrNull()?.let { err(it) }))
+                val drones = ds?.getOrNull().orEmpty() + fda?.getOrNull().orEmpty()
+                val pinned = DroneSelector.normaliseSerial(settings.pinnedSerial)
+                val bound = drones.filter { DroneSelector.normaliseSerial(it.serial) == pinned }.maxByOrNull { it.posTimeMs }
+                val adsb = runCatching { Parsers.parseReadsb(http.get(base() + "/api/live/adsb"), System.currentTimeMillis(), "cloud") }
+                val center = bound?.pos ?: controllerFix()?.pos ?: lastOwnPos
+                val near = adsb.getOrNull()?.let { all -> center?.let { TrafficMerger.within(all, it, settings.trafficRadiusNm).size } }
+                val stationOk = settings.stationEnabled && health.get("station")?.let { health.stateOf(it, System.currentTimeMillis()) == HealthMonitor.State.OK } == true
+                val tfr = if (tfrZones.isNotEmpty()) Result.success(tfrZones.size) else runCatching { Parsers.parseTfrs(http.get(base() + "/api/tfrs")).also { tfrZones = it }.size }
+                val fix = controllerFix()
+                val fixAge = fix?.let { (System.currentTimeMillis() - it.timeMs) / 1000.0 }
+                val nmc = androidx.core.app.NotificationManagerCompat.from(this@SentryService)
+                val ch = getSystemService(android.app.NotificationManager::class.java).getNotificationChannel(Notifier.CH_TRAFFIC)
+                val (audible, soundDetail) = sound.audible()
+                // Sound: play the WARNING sound now, so the pilot hears exactly what a warning sounds like.
+                sound.play(SoundLevel.WARNING, Cue.FULL, settings.soundUri(SoundLevel.WARNING), settings.soundVolume(SoundLevel.WARNING))
+                if (settings.vibrationOn) sound.vibrate(SoundLevel.PREFLIGHT)
+                val facts = Preflight.Facts(
+                    internet = internet.state == InternetMonitor.State.ONLINE || lastReachOkMs?.let { System.currentTimeMillis() - it < 20_000 } == true,
+                    tokenAccepted = tokenAccepted, tokenDetail = rejected?.let { Regex("HTTP \\d+").find(it)?.value } ?: errs.firstOrNull() ?: "",
+                    droneFeedOk = feed.ok, droneFeedDetail = feed.detail,
+                    pinnedSerial = pinned, boundAirborne = bound?.isAirborne, boundCallsign = bound?.callsign,
+                    controllerGps = fix != null && fixAge!! <= 60, controllerGpsDetail = when {
+                        fix == null -> "no fix"
+                        fixAge!! > 60 -> "last fix ${fixAge.toInt()} s old"
+                        else -> "fix" + (fix.accuracyM?.let { " ±${it.toInt()} m" } ?: "")
+                    },
+                    trafficOk = adsb.isSuccess || stationOk, trafficDetail = when {
+                        adsb.isSuccess -> "cloud ADS-B OK" + (near?.let { " · $it within ${settings.trafficRadiusNm.toInt()} nm" } ?: "") + if (stationOk) " · station OK" else ""
+                        stationOk -> "station OK · cloud: ${err(adsb.exceptionOrNull()!!)}"
+                        else -> "cloud: ${err(adsb.exceptionOrNull()!!)}"
+                    },
+                    tfrOk = tfr.isSuccess, tfrDetail = tfr.fold({ "$it TFRs" }, { "TFR feed: ${err(it)}" }),
+                    notificationsEnabled = nmc.areNotificationsEnabled(),
+                    headsUpAllowed = ch == null || ch.importance >= android.app.NotificationManager.IMPORTANCE_HIGH,
+                    batteryExempt = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
+                    soundAudible = audible, soundDetail = if (audible) "played the warning sound · $soundDetail" else "muted: $soundDetail",
+                    vibrator = sound.hasVibrator,
+                )
+                val items = Preflight.items(facts)
+                items.forEach { SentryBus.log("Pre-flight ${if (it.ok) "OK  " else "FAIL"} ${it.name}: ${it.detail}${if (!it.ok && it.fix.isNotEmpty()) " -> ${it.fix}" else ""}") }
+                SentryBus.preflight.value = System.currentTimeMillis() to items
+                delay(2_600)                                              // let the warning sound finish
+                val summary = Preflight.summary(items)
+                val t = System.currentTimeMillis()
+                deliver(OutputPlanner.plan(listOf(AlertEvent(t, EventKind.PREFLIGHT, if (Preflight.passed(items)) Severity.INFO else Severity.CAUTION, summary)),
+                    mutes, settings.alertStyle, t), "preflight", null, t)
+            } catch (e: Exception) {
+                SentryBus.log("Pre-flight failed: $e")
+            } finally {
+                SentryBus.preflightRunning.value = false
+            }
+        }
     }
 
     private fun replayClock(t: Long, sc: ReplayScenario): String {
@@ -570,8 +779,17 @@ class SentryService : Service() {
             targetsInRadius = nTraffic,
             watchedZones = res.watchedZones,
             trafficStale = res.trafficStale,
-            voice = if (!settings.voiceOn) "muted in Settings" else voice.status,
-            voiceOk = settings.voiceOn && voice.ready,
+            sounds = soundsLabel(now),
+            soundsOk = !mutes.quietActive(now),
+            vibration = if (!sound.hasVibrator) "not available on this controller" else if (settings.vibrationOn) "on" else "off in Settings",
+            internet = when (internet.state) {
+                InternetMonitor.State.ONLINE -> "ONLINE"
+                InternetMonitor.State.OFFLINE -> "OFFLINE"
+                InternetMonitor.State.UNKNOWN -> "CHECKING"
+            } + if (internet.state != InternetMonitor.State.UNKNOWN && internet.sinceMs > 0) " " + ago(wall - internet.sinceMs) else "",
+            internetOk = internet.state != InternetMonitor.State.OFFLINE,
+            pollRates = "${rates.label} · fleet ${rates.fleetMs / 1000} s · cloud ${rates.cloudMs / 1000} s · station ${rates.stationMs / 1000} s",
+            muted = res.targets.mapNotNull { v -> mutes.label(v.hex, now)?.let { v.hex to it } }.toMap(),
             replayTitle = sc?.title,
             replayClock = sc?.let { replayClock(now, it) },
             replayProgress = sc?.let { ((now - it.startMs).toFloat() / (it.endMs - it.startMs)).coerceIn(0f, 1f) } ?: 0f,
@@ -590,23 +808,41 @@ class SentryService : Service() {
     }
 
     private fun publishOff() {
-        SentryBus.publish(UiState(mode = Mode.OFF, tickMs = System.currentTimeMillis(), voice = voice.status, voiceOk = voice.ready))
+        SentryBus.publish(UiState(mode = Mode.OFF, tickMs = System.currentTimeMillis(), sounds = "starts when armed",
+            vibration = if (sound.hasVibrator) "available" else "not available on this controller"))
     }
 
+    private fun soundsLabel(now: Long): String {
+        val q = mutes.quietLeftSec(now)
+        return if (q != null) "QUIET ${Banner.clock(q)} left" else "ON (${settings.alertStyle.label})"
+    }
+
+    private fun ago(ms: Long): String { val s = ms / 1000; return if (s < 120) "${s}s" else if (s < 7200) "${s / 60}m" else "${s / 3600}h" }
+
+    /**
+     * The status notification: "Bound to <serial> · 12 targets · sounds on", then any mute countdown
+     * ("N388KM muted 47 s", "Quiet 4:12 left") and "Internet offline".
+     */
     private fun statusLine(st: UiState? = null): String {
         st ?: return "Starting…"
         val who = when {
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock ?: ""}"
-            st.waitingForBound -> "Waiting for this controller's aircraft ${st.boundSerial}"
+            st.waitingForBound -> "Waiting for ${st.boundSerial}"
             st.selectionMode == SelectionMode.CONTROLLER && st.ownship == null -> "No drone · controller GPS unavailable"
             st.selectionMode == SelectionMode.CONTROLLER -> "No aircraft pinned · protecting this controller"
             st.ownship == null -> "No drone position"
             !st.ownshipFresh -> "Drone position LOST (${st.ownship.name})"
-            else -> "Watching ${st.ownship.name}"
+            else -> "Bound to ${st.boundSerial ?: st.ownship.serial ?: ""} · ${st.ownship.callsign ?: st.ownship.name}"
         }
-        val srcs = st.sources.filter { it.state == HealthMonitor.State.OK && (it.name.startsWith("Station") || it.name.startsWith("Cloud")) }
-            .joinToString("+") { if (it.name.startsWith("Station")) "station" else "cloud" }.ifEmpty { "NO TRAFFIC SOURCE" }
-        return "$who · ${st.targets.size} targets · ${if (st.mode == Mode.REPLAY) "replay" else srcs}"
+        val parts = ArrayList<String>()
+        if (!st.internetOk) parts += "Internet offline"
+        parts += who
+        parts += "${st.targets.size} targets"
+        parts += if (st.soundsOk) "sounds on" else st.sounds.lowercase().replaceFirstChar { it.uppercase() }
+        st.muted.entries.sortedBy { it.value }.forEach { (hex, lbl) ->
+            parts += "${st.targets.firstOrNull { it.hex == hex }?.displayId ?: hex} $lbl"
+        }
+        return parts.joinToString(" · ")
     }
 
     private fun updateNotification(st: UiState) {
@@ -614,7 +850,7 @@ class SentryService : Service() {
         if (line == lastNotifText) return
         lastNotifText = line
         val nm = getSystemService(android.app.NotificationManager::class.java)
-        nm.notify(Notifier.ID_STATUS, Notifier.status(this, "Flight Deck Sentry", line))
+        runCatching { nm.notify(Notifier.ID_STATUS, Notifier.status(this, "Flight Deck Sentry", line)) }
     }
 
     // ── GPS fallback ────────────────────────────────────────────────────────
@@ -670,7 +906,9 @@ class SentryService : Service() {
         stopLiveJobs()
         replayJob?.cancel()
         runCatching { if (wakeLock?.isHeld == true) wakeLock?.release() }
-        voice.shutdown()
+        runCatching { netCallback?.let { getSystemService(android.net.ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } }
+        notifier.cancelAll()
+        sound.shutdown()
         scope.cancel()
         publishOff()
         super.onDestroy()

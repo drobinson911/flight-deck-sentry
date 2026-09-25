@@ -2,9 +2,11 @@ package com.uasflightdeck.sentry
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.uasflightdeck.sentry.core.AlertStyle
 import com.uasflightdeck.sentry.core.Cylinder
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.SentryConfig
+import com.uasflightdeck.sentry.core.SoundLevel
 
 /**
  * All user settings, in plain SharedPreferences (small, synchronous, survives
@@ -38,11 +40,46 @@ class Settings(ctx: Context) {
     var advisoryNm by dbl("advisoryNm", 3.0)
     var cautionNm by dbl("cautionNm", 1.0)
     var warningNm by dbl("warningNm", 0.5)
-    /** Protected volume: surface up to this far above the drone (v0.3.3; replaces the ± band "verticalBandFt"). */
-    var ceilingAboveFt by dbl("ceilingAboveFt", 2000.0)
+    /** Protected volume: surface up to this far above the drone ("Ceiling above aircraft", 1,500 from 0.4.0). */
+    var ceilingAboveFt by dbl("ceilingAboveFt", 1500.0)
     var baroCorrectionFt by dbl("baroCorrectionFt", 300.0)
-    var cpaHorizonSec by dbl("cpaHorizonSec", 60.0)
     var tfrRelevanceNm by dbl("tfrRelevanceNm", 10.0)
+    /** Zone ENTRY alerts only for zones containing the drone or within this distance of it. */
+    var zoneAlertNm by dbl("zoneAlertNm", 2.0)
+
+    // prediction (time to closest approach)
+    var trackSec by dbl("trackSec", 120.0)
+    var warningSec by dbl("warningSec", 60.0)
+    var collisionSec by dbl("collisionSec", 60.0)
+    var trackMissNm by dbl("trackMissNm", 1.0)
+    var warningMissNm by dbl("warningMissNm", 0.5)
+    var collisionMissFt by dbl("collisionMissFt", 500.0)
+    var collisionVertFt by dbl("collisionVertFt", 300.0)
+    var corridorDeg by dbl("corridorDeg", 0.0)
+
+    // cadence, alert style, banner, mutes
+    var alertStyle: AlertStyle
+        get() = runCatching { AlertStyle.valueOf(p.getString("alertStyle", "STANDARD")!!) }.getOrDefault(AlertStyle.STANDARD)
+        set(v) = p.edit().putString("alertStyle", v.name).apply()
+    var trackUpdateSec by dbl("trackUpdateSec", 30.0)
+    var cautionRepeatSec by dbl("cautionRepeatSec", 20.0)
+    var warnFarSec by dbl("warnFarSec", 20.0)
+    var warnNearSec by dbl("warnNearSec", 12.0)
+    var warnCloseSec by dbl("warnCloseSec", 6.0)
+    var collisionRepeatSec by dbl("collisionRepeatSec", 3.0)
+    /** Every banner cancels after this long (traffic: restarted by each cadence refresh). */
+    var bannerSec by dbl("bannerSec", 5.0)
+    var gotItSec by dbl("gotItSec", 60.0)
+    var quietMin by dbl("quietMin", 5.0)
+    /** Offer "Ignore" (mute until it clears the rings) on traffic banners. */
+    var ignoreEnabled by bool("ignoreEnabled", true)
+
+    // sounds & vibration (per level: picked URI, "" = Sentry's default; volume 0-100 %)
+    fun soundUri(l: SoundLevel): String = p.getString("sound_${l.key}", "") ?: ""
+    fun setSoundUri(l: SoundLevel, uri: String) = p.edit().putString("sound_${l.key}", uri).apply()
+    fun soundVolume(l: SoundLevel): Int = p.getInt("vol_${l.key}", 100)
+    fun setSoundVolume(l: SoundLevel, pct: Int) = p.edit().putInt("vol_${l.key}", pct.coerceIn(0, 100)).apply()
+    var vibrationOn by bool("vibrationOn", true)
 
     // targets SHOWN (list + compass); alerts are unaffected
     var targetsAircraftNm by dbl("targetsAircraftNm", 10.0)
@@ -53,12 +90,6 @@ class Settings(ctx: Context) {
         aroundControllerNm = targetsControllerNm.takeIf { it > 0 } ?: 15.0,
         ceilingFt = targetsCeilingFt.takeIf { it > 0 } ?: 18_000.0,
     )
-
-    // voice
-    var voiceOn by bool("voiceOn", true)
-    var volume by dbl("volume", 1.0)
-    /** Debug builds / tests: skip TTS and use the bundled voice, as on the DJI RC Plus (no TTS engine). */
-    var voiceForceBundled by bool("voiceForceBundled", false)
 
     // controller protection (when this controller's aircraft is not in the feed, or none is pinned)
     var cylinders: List<Cylinder>
@@ -83,6 +114,8 @@ class Settings(ctx: Context) {
     var autoStartOnBoot by bool("autoStartOnBoot", false)
     var replaySpeed by dbl("replaySpeed", 1.0)
     var replayCloudView by bool("replayCloudView", false)
+    /** Replay the SYNTHETIC crossing variant (N388KM climbing through the drone's altitude: COLLISION RISK). */
+    var replayCrossing by bool("replayCrossing", false)
     var batteryPrompted by bool("batteryPrompted", false)
 
     // self-update (GitHub releases): the last check's result, so the banner survives restarts
@@ -98,12 +131,37 @@ class Settings(ctx: Context) {
     fun selectorConfig() = DroneSelector.SelectorConfig(pinnedSerial = pinnedSerial)
 
     fun engineConfig(): SentryConfig {
-        val c = SentryConfig(
+        val style = alertStyle
+        var c = SentryConfig(
             advisoryNm = advisoryNm, cautionNm = cautionNm, warningNm = warningNm,
             ceilingAboveFt = ceilingAboveFt, baroCorrectionFt = baroCorrectionFt,
-            cpaHorizonSec = cpaHorizonSec, tfrRelevanceNm = tfrRelevanceNm,
+            tfrRelevanceNm = tfrRelevanceNm, zoneAlertNm = zoneAlertNm,
+            trackSec = trackSec, warningSec = warningSec, collisionSec = collisionSec,
+            trackMissNm = trackMissNm, warningMissNm = warningMissNm, collisionMissFt = collisionMissFt,
+            collisionVertFt = collisionVertFt, corridorDeg = corridorDeg,
+            trackUpdateSec = trackUpdateSec, advisoryRepeatSec = trackUpdateSec, cautionRepeatSec = cautionRepeatSec,
+            warnFarSec = warnFarSec, warnNearSec = warnNearSec, warnCloseSec = warnCloseSec,
+            collisionRepeatSec = collisionRepeatSec,
+            cadenceScale = style.cadenceScale, advisorySound = style.advisorySound,
         )
-        return if (c.ringsValid()) c else SentryConfig()
+        val d = SentryConfig()
+        if (!c.ringsValid()) c = c.copy(advisoryNm = d.advisoryNm, cautionNm = d.cautionNm, warningNm = d.warningNm)
+        if (!c.predictionValid()) c = c.copy(trackSec = d.trackSec, warningSec = d.warningSec, collisionSec = d.collisionSec,
+            trackMissNm = d.trackMissNm, warningMissNm = d.warningMissNm, collisionMissFt = d.collisionMissFt, collisionVertFt = d.collisionVertFt)
+        return c
+    }
+
+    /**
+     * One-time moves to the 0.4.0 defaults: the old default ceiling (2,000, stored by 0.3.4's auto-save) becomes
+     * 1,500; the voice prefs are dropped. A value the pilot chose (anything but the old default) is kept.
+     * Returns what changed, for the log.
+     */
+    fun migrate(): List<String> {
+        if (p.getInt("schema", 0) >= 400) return emptyList()
+        val out = ArrayList<String>()
+        if (p.contains("ceilingAboveFt") && ceilingAboveFt == 2000.0) { ceilingAboveFt = 1500.0; out += "Ceiling above aircraft 2,000 -> 1,500 ft (0.4.0 default)" }
+        p.edit().remove("voiceOn").remove("volume").remove("voiceForceBundled").remove("cpaHorizonSec").putInt("schema", 400).apply()
+        return out
     }
 
     // ── delegates ────────────────────────────────────────────────────────

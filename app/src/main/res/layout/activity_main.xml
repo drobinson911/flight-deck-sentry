@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Main screen. The action bar (ARM/DISARM, Test, Settings) is pinned at the bottom, OUTSIDE any
+  Main screen. The action bar (ARM/DISARM, Pre-flight, Settings) is pinned at the bottom, OUTSIDE any
   scroll container, so it is on screen whatever the panels contain. Each of the three columns above it is its
   own vertical ScrollView (fillViewport: panels stretch to fill when they fit, the column scrolls when they
   don't). The columns are siblings, never nested, so there is no nested-scroll conflict.
@@ -166,7 +166,7 @@
                     android:layout_marginTop="8dp"
                     android:layout_weight="1.25"
                     android:orientation="vertical">
-                    <TextView android:id="@+id/calloutsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last callouts" />
+                    <TextView android:id="@+id/calloutsLabel" style="@style/Sentry.Label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Last alerts" />
                     <TextView android:id="@+id/callouts" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:lineSpacingExtra="4dp" />
                 </LinearLayout>
                 <TextView
@@ -202,7 +202,7 @@
             android:layout_weight="1.4"
             android:textSize="20sp" />
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnTest"
+            android:id="@+id/btnPreflight"
             style="@style/Sentry.Button"
             app:autoSizeTextType="uniform"
             app:autoSizeMinTextSize="11sp"
@@ -213,7 +213,7 @@
             android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:backgroundTint="@color/panel2"
-            android:text="Test"
+            android:text="Pre-flight"
             android:textColor="@color/ink"
             android:textSize="18sp" />
         <com.google.android.material.button.MaterialButton

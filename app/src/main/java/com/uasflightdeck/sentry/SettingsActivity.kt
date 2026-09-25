@@ -5,7 +5,9 @@ import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,7 +42,9 @@ import com.google.android.material.button.MaterialButton
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.uasflightdeck.sentry.core.AlertStyle
 import com.uasflightdeck.sentry.core.Cylinder
+import com.uasflightdeck.sentry.core.SoundLevel
 import com.uasflightdeck.sentry.core.DroneSelector
 import com.uasflightdeck.sentry.core.FleetStatus
 import com.uasflightdeck.sentry.core.CylinderAltRef
@@ -54,8 +58,9 @@ import java.util.Locale
 
 /**
  * One scrolling page: two columns at 1000 dp and wider, one column on the RC Plus (~768 dp). On the
- * controller the order is: alert rings (+ targets shown), controller cylinders, this controller's aircraft,
- * then feeds, voice, geofences, background, app update, and the replay last.
+ * controller the order is (owner, 0.4.0): rings & volume (+ targets shown), controller cylinders, this
+ * controller's aircraft, prediction, cadence & alert style & banner duration & mute timings, sounds &
+ * vibration, fleet token / station / TFR zones, geofences, background, app update, and the replay last.
  *
  * Auto-save (0.3.4): every field persists ~400 ms after the last keystroke (switches at once), and again
  * on Save, Back and when leaving the screen. A numeric field that isn't a valid number in range shows a
@@ -134,14 +139,14 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(root)
 
         // ── Column A (top on the controller): alert rings + targets shown, controller cylinders, this controller's aircraft ──
-        section(left, "Alert rings around the drone").apply {
+        section(left, "Alert rings & protected volume").apply {
+            addView(note("Rings around the drone are live even with it on the pad. Advisory = inside 3 mi (banner only in the " +
+                "Standard style), caution = inside 1 mi, warning = inside 0.5 mi; each only for aircraft inside the volume."))
             val a = num("Advisory ring (nm)", s.advisoryNm, FieldRules.RING)
             val c = num("Caution ring (nm)", s.cautionNm, FieldRules.RING)
             val w = num("Warning ring (nm)", s.warningNm, FieldRules.RING)
             val band = num("Ceiling above aircraft (ft): protected from the surface up to this far above it", s.ceilingAboveFt, FieldRules.CEILING_ABOVE)
             val baro = num("Baro correction when no GPS altitude (ft, \"estimated\")", s.baroCorrectionFt, FieldRules.BARO_CORRECTION)
-            val cpa = num("Predictive look-ahead (s)", s.cpaHorizonSec, FieldRules.CPA_HORIZON)
-            val tfr = num("Watch TFRs within (nm of drone)", s.tfrRelevanceNm, FieldRules.TFR_RELEVANCE)
             addView(label("TARGETS SHOWN in the list and on the compass (alerts are not affected)"))
             val ta = num("Show targets within (nm of this controller's aircraft)", s.targetsAircraftNm, FieldRules.TARGETS_AIRCRAFT)
             val tc = num("Show targets within (nm of the controller, when the aircraft isn't in the feed)", s.targetsControllerNm, FieldRules.TARGETS_CONTROLLER)
@@ -163,7 +168,6 @@ class SettingsActivity : AppCompatActivity() {
                 FieldRules.rings(a.text.toString(), c.text.toString(), w.text.toString(), FieldRules.RING,
                     Triple(s.advisoryNm, s.cautionNm, s.warningNm))?.let { (av, cv, wv) -> s.advisoryNm = av; s.cautionNm = cv; s.warningNm = wv }
                 s.ceilingAboveFt = band.valueOr(s.ceilingAboveFt); s.baroCorrectionFt = baro.valueOr(s.baroCorrectionFt)
-                s.cpaHorizonSec = cpa.valueOr(s.cpaHorizonSec); s.tfrRelevanceNm = tfr.valueOr(s.tfrRelevanceNm)
                 s.targetsAircraftNm = ta.valueOr(s.targetsAircraftNm); s.targetsControllerNm = tc.valueOr(s.targetsControllerNm)
                 s.targetsCeilingFt = tceil.valueOr(s.targetsCeilingFt)
             }
@@ -209,8 +213,80 @@ class SettingsActivity : AppCompatActivity() {
             renderFeedList()
         }
 
-        // ── Column B: feeds, voice, geofences, background, app update, replay ──
-        section(right, "Fleet feed (drone position)").apply {
+        section(left, "Prediction (time to closest approach)").apply {
+            addView(note("Every second each aircraft is extrapolated in a straight line (track, speed, vertical rate) against the drone's own " +
+                "motion. TRACK ALERT: predicted within the track miss inside the track time. WARNING: within the warning miss inside the " +
+                "warning time (or actually inside the warning ring). COLLISION RISK: within the collision miss and vertical inside the " +
+                "collision time, or climbing / descending THROUGH your altitude while inside the warning ring in the next collision time."))
+            val tt = num("TRACK ALERT: time to closest (s)", s.trackSec, FieldRules.PRED_SEC)
+            val wt = num("WARNING: time to closest (s)", s.warningSec, FieldRules.PRED_SEC)
+            val ct = num("COLLISION RISK: time to closest (s)", s.collisionSec, FieldRules.PRED_SEC)
+            val tm = num("TRACK ALERT: predicted miss (nm)", s.trackMissNm, FieldRules.PRED_MISS_NM)
+            val wm = num("WARNING: predicted miss (nm)", s.warningMissNm, FieldRules.PRED_MISS_NM)
+            val cm = num("COLLISION RISK: predicted miss (ft)", s.collisionMissFt, FieldRules.COLLISION_MISS_FT)
+            val cv = num("COLLISION RISK: vertical at closest (ft)", s.collisionVertFt, FieldRules.COLLISION_VERT_FT)
+            val cd = num("Corridor widening (degrees; 0 = off): miss + distance × tan", s.corridorDeg, FieldRules.CORRIDOR_DEG)
+            addView(note("Defaults 120 / 60 / 60 s, 1 / 0.5 nm, 500 / 300 ft, no widening: the fleet simulation's best (86 real flights)."))
+            val times = listOf(tt, wt, ct, tm, wm)
+            val checkOrder = {
+                times.forEach { validate(it) }
+                val v = times.map { (FieldRules.parseNumber(it.text.toString(), specs.getValue(it)) as? FieldRules.Parsed.Ok)?.value }
+                if (v.all { it != null } && !FieldRules.predictionOrdered(v[0]!!, v[1]!!, v[2]!!, v[3]!!, v[4]!!))
+                    times.forEach { it.showError("Needs track ≥ warning ≥ collision time, and track miss ≥ warning miss") }
+            }
+            times.forEach { validators[it] = checkOrder }
+            checkOrder()
+            savers += {
+                val v = times.map { (FieldRules.parseNumber(it.text.toString(), specs.getValue(it)) as? FieldRules.Parsed.Ok)?.value }
+                if (v.all { it != null } && FieldRules.predictionOrdered(v[0]!!, v[1]!!, v[2]!!, v[3]!!, v[4]!!)) {
+                    s.trackSec = v[0]!!; s.warningSec = v[1]!!; s.collisionSec = v[2]!!; s.trackMissNm = v[3]!!; s.warningMissNm = v[4]!!
+                }
+                s.collisionMissFt = cm.valueOr(s.collisionMissFt); s.collisionVertFt = cv.valueOr(s.collisionVertFt)
+                s.corridorDeg = cd.valueOr(s.corridorDeg)
+            }
+        }
+
+        section(right, "Cadence, alert style, banners & mutes").apply {
+            addView(label("Alert style"))
+            val styles = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL; setOnCheckedChangeListener { _, _ -> scheduleAutoSave() } }
+            styles.addView(radio("Standard", 401)); styles.addView(radio("Quiet", 402)); styles.addView(radio("Loud", 403))
+            styles.check(when (s.alertStyle) { AlertStyle.QUIET -> 402; AlertStyle.LOUD -> 403; else -> 401 })
+            addView(styles)
+            addView(note("Standard: advisory is banner-only, caution and up sound. Quiet: every repeat interval doubled, advisory and caution " +
+                "banner-only. Loud: advisory sounds too. Escalations always sound; the COLLISION RISK tone is never slowed."))
+            val wf = num("WARNING repeat, 1 mi and beyond (s)", s.warnFarSec, FieldRules.REPEAT_SEC)
+            val wn = num("WARNING repeat, 0.5–1 mi (s)", s.warnNearSec, FieldRules.REPEAT_SEC)
+            val wc = num("WARNING repeat, inside 0.5 mi or closest in < 30 s (s; never faster than 6)", s.warnCloseSec, FieldRules.REPEAT_SEC)
+            val cr = num("CAUTION repeat (s)", s.cautionRepeatSec, FieldRules.REPEAT_SEC)
+            val tu = num("TRACK / advisory banner update (s, no sound)", s.trackUpdateSec, FieldRules.REPEAT_SEC)
+            val col = num("COLLISION RISK tone every (s)", s.collisionRepeatSec, FieldRules.COLLISION_REPEAT_SEC)
+            val bd = num("Banner duration (s): every banner clears itself after this", s.bannerSec, FieldRules.BANNER_SEC)
+            val gi = num("\"Got it\" mutes that aircraft's repeats for (s)", s.gotItSec, FieldRules.GOT_IT_SEC)
+            val qm = num("\"Quiet\" turns traffic sounds off for (min)", s.quietMin, FieldRules.QUIET_MIN)
+            val ig = switch("Offer \"Ignore\" on banners (mute an aircraft until it clears the rings)", s.ignoreEnabled)
+            addView(note("Every mute gives way at once to an escalation, a COLLISION RISK, or the aircraft turning toward the drone."))
+            savers += {
+                s.alertStyle = when (styles.checkedRadioButtonId) { 402 -> AlertStyle.QUIET; 403 -> AlertStyle.LOUD; else -> AlertStyle.STANDARD }
+                s.warnFarSec = wf.valueOr(s.warnFarSec); s.warnNearSec = wn.valueOr(s.warnNearSec); s.warnCloseSec = wc.valueOr(s.warnCloseSec)
+                s.cautionRepeatSec = cr.valueOr(s.cautionRepeatSec); s.trackUpdateSec = tu.valueOr(s.trackUpdateSec)
+                s.collisionRepeatSec = col.valueOr(s.collisionRepeatSec); s.bannerSec = bd.valueOr(s.bannerSec)
+                s.gotItSec = gi.valueOr(s.gotItSec); s.quietMin = qm.valueOr(s.quietMin); s.ignoreEnabled = ig.isChecked
+            }
+        }
+
+        section(right, "Sounds & vibration").apply {
+            addView(note("Each alert plays one of this controller's own sounds (warning and collision risk on the alarm volume, the rest on " +
+                "the notification volume), then vibrates. Nothing is spoken. A sound that can't be found falls back to the controller's " +
+                "default sound: never silence."))
+            for (level in SoundLevel.entries) addView(soundRow(level))
+            val vib = switch("Vibrate with each alert", s.vibrationOn)
+            addView(note(if (player.hasVibrator) "Vibration: available on this controller." else "Vibration: not available on this controller (skipped)."))
+            savers += { s.vibrationOn = vib.isChecked }
+        }
+
+        // ── then: feeds, TFR / geofences, background, app update, replay ──
+        section(right, "Fleet token, station & updates").apply {
+            addView(note("Fleet feed (drone position)"))
             val token = field("Fleet token (X-Fleet-Token)", if (s.fleetTokenIsDefault) "" else s.fleetToken,
                 hint = if (s.fleetTokenIsDefault) "using token built into this APK" else "paste token", password = true)
             addView(button("Paste token from clipboard", secondary = true) {
@@ -235,25 +311,9 @@ class SettingsActivity : AppCompatActivity() {
             val radius = num("Traffic radius (nm)", s.trafficRadiusNm, FieldRules.TRAFFIC_RADIUS)
             savers += { s.stationEnabled = st.isChecked; s.stationUrl = url.text.toString().trim(); s.stationAutoDiscover = auto.isChecked
                 s.cloudEnabled = cloud.isChecked; s.trafficRadiusNm = radius.valueOr(s.trafficRadiusNm) }
-        }
-
-        section(right, "Voice").apply {
-            val v = switch("Voice callouts", s.voiceOn)
-            addView(label("Volume"))
-            val vol = SeekBar(this@SettingsActivity).apply {
-                max = 100; progress = (s.volume * 100).toInt()
-                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(b: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) scheduleAutoSave() }
-                    override fun onStartTrackingTouch(b: SeekBar?) {}
-                    override fun onStopTrackingTouch(b: SeekBar?) {}
-                })
-            }
-            addView(vol)
-            savers += { s.voiceOn = v.isChecked; s.volume = vol.progress / 100.0 }
-            addView(button("Test callout", secondary = true) { flush(); SentryService.send(this@SettingsActivity, SentryService.ACTION_TEST) })
-            addView(note("Test voice says a full warning through the voice in use: the controller's text-to-speech when it has " +
-                "one, else Sentry's bundled voice (the DJI RC Plus has no text-to-speech). The main screen's Voice row names it."))
-            addView(button("Test voice", secondary = true) { flush(); SentryService.send(this@SettingsActivity, SentryService.ACTION_VOICE_TEST) })
+            val tfr = num("Watch (show) TFRs within (nm of drone)", s.tfrRelevanceNm, FieldRules.TFR_RELEVANCE)
+            val za = num("Zone entry alerts only for TFRs / geofences containing the drone or within (nm)", s.zoneAlertNm, FieldRules.ZONE_ALERT_NM)
+            savers += { s.tfrRelevanceNm = tfr.valueOr(s.tfrRelevanceNm); s.zoneAlertNm = za.valueOr(s.zoneAlertNm) }
         }
 
         section(right, "Geofences").apply {
@@ -290,7 +350,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         section(right, "Replay (see it work)").apply {
-            addView(note("Plays a real encounter recorded from public ADS-B data (DEMO-1 vs N388KM, TFR 0/0000) through the live engine, voice and notifications."))
+            addView(note("Plays a real encounter recorded from public ADS-B data (DEMO-1 vs N388KM, TFR 0/0000) through the live engine, sounds and banners."))
             val speeds = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL; setOnCheckedChangeListener { _, _ -> scheduleAutoSave() } }
             val r1 = radio("1×", 101); val r4 = radio("4×", 104)
             speeds.addView(r1); speeds.addView(r4)
@@ -300,12 +360,17 @@ class SettingsActivity : AppCompatActivity() {
                 text = "Public-feed view (N388KM reporting alt \"ground\", no track)"; setTextColor(col(R.color.ink)); textSize = 16f; isChecked = s.replayCloudView
                 setOnCheckedChangeListener { _, _ -> scheduleAutoSave() } }
             addView(cloud)
-            savers += { s.replaySpeed = if (speeds.checkedRadioButtonId == 104) 4.0 else 1.0; s.replayCloudView = cloud.isChecked }
+            val crossing = CheckBox(this@SettingsActivity).apply {
+                text = "SYNTHETIC crossing variant (N388KM climbing through the drone's altitude: COLLISION RISK)"; setTextColor(col(R.color.ink)); textSize = 16f
+                isChecked = s.replayCrossing; setOnCheckedChangeListener { _, _ -> scheduleAutoSave() } }
+            addView(crossing)
+            savers += { s.replaySpeed = if (speeds.checkedRadioButtonId == 104) 4.0 else 1.0; s.replayCloudView = cloud.isChecked; s.replayCrossing = crossing.isChecked }
             addView(row(
                 button("Replay: demo encounter") {
                     dismissKeyboard(); flush()
                     SentryService.send(this@SettingsActivity, SentryService.ACTION_REPLAY) {
                         it.putExtra(SentryService.EXTRA_SPEED, s.replaySpeed); it.putExtra(SentryService.EXTRA_CLOUD_VIEW, s.replayCloudView)
+                        it.putExtra(SentryService.EXTRA_CROSSING, s.replayCrossing)
                     }
                     finish()
                 },
@@ -315,6 +380,61 @@ class SettingsActivity : AppCompatActivity() {
 
         building = false
     }
+
+    // ── sounds ────────────────────────────────────────────────────────────
+    private val player by lazy { SoundPlayer(this) }
+    private val soundTitles = HashMap<SoundLevel, TextView>()
+    private var picking: SoundLevel? = null
+    private val pickSound = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val level = picking ?: return@registerForActivityResult
+        val uri: Uri? = if (Build.VERSION.SDK_INT >= 33) r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            else @Suppress("DEPRECATION") r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        if (r.resultCode == RESULT_OK && uri != null) {
+            s.setSoundUri(level, uri.toString()); player.forget()
+            soundTitles[level]?.text = player.title(level, s.soundUri(level))
+            SentryBus.log("Sound for ${level.key}: ${uri}")
+        }
+    }
+
+    /** One level: its sound (Choose… opens the controller's own sound picker), Test, Default, and a volume slider. */
+    private fun soundRow(level: SoundLevel): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(6), 0, dp(6)) }
+        box.addView(label(level.label + if (level.alarmStream) "  (alarm volume)" else ""))
+        val title = TextView(this).apply { textSize = 16f; setTextColor(col(R.color.ink)); text = player.title(level, s.soundUri(level)) }
+        soundTitles[level] = title
+        box.addView(title)
+        box.addView(row(
+            button("Choose…", secondary = true) {
+                picking = level
+                val cur = player.resolve(level, s.soundUri(level)).uri?.let { Uri.parse(it) }
+                val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, if (level.alarmStream) RingtoneManager.TYPE_ALARM else RingtoneManager.TYPE_NOTIFICATION)
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Sound for: ${level.label}")
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false)
+                    .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, cur)
+                runCatching { pickSound.launch(i) }.onFailure { toast("No sound picker on this controller") }
+            },
+            button("Test", secondary = true) {
+                player.play(level, com.uasflightdeck.sentry.core.Cue.FULL, s.soundUri(level), s.soundVolume(level))
+                if (s.vibrationOn) player.vibrate(level)
+            },
+            button("Default", secondary = true) { s.setSoundUri(level, ""); player.forget(); title.text = player.title(level, "") },
+        ))
+        val vol = SeekBar(this).apply {
+            max = 100; progress = s.soundVolume(level)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(b: SeekBar?, p: Int, fromUser: Boolean) { if (fromUser) s.setSoundVolume(level, p) }
+                override fun onStartTrackingTouch(b: SeekBar?) {}
+                override fun onStopTrackingTouch(b: SeekBar?) {}
+            })
+        }
+        box.addView(TextView(this).apply { textSize = 14f; setTextColor(col(R.color.dim)); text = "Volume (of the stream's volume)" })
+        box.addView(vol)
+        return box
+    }
+
+    override fun onDestroy() { super.onDestroy(); runCatching { player.shutdown() } }
 
     // ── keyboard ──────────────────────────────────────────────────────────
     /** Hide the soft keyboard and take focus off the field (the focusable root takes it). */

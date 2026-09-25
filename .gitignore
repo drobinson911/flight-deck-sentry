@@ -12,5 +12,5 @@ secrets.properties
 # OS
 .DS_Store
 
-# python bytecode (tools/voicebank)
+# python bytecode
 __pycache__/

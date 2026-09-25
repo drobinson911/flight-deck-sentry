@@ -42,6 +42,9 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         const val REQ_ARM = 1
         val SRC_ABBR = mapOf("station" to "stn", "cloud" to "cld", "airsense" to "air", "replay" to "rpl")
+        val TIER_TAG = mapOf(com.uasflightdeck.sentry.core.Tier.ADVISORY to "ADVISORY", com.uasflightdeck.sentry.core.Tier.TRACK to "TRACK",
+            com.uasflightdeck.sentry.core.Tier.CAUTION to "CAUTION", com.uasflightdeck.sentry.core.Tier.WARNING to "WARNING",
+            com.uasflightdeck.sentry.core.Tier.COLLISION to "COLLISION RISK")
     }
     private lateinit var settings: Settings
     private lateinit var banner: TextView
@@ -59,6 +62,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var updateBanner: TextView
     private lateinit var plan: ScreenLayout.MainPlan
+    private lateinit var preflightBtn: MaterialButton
+    /** The pilot's own Pre-flight tap: only its result opens the list (never a prompt of Sentry's own accord). */
+    private var preflightAskedMs = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         callouts = findViewById(R.id.callouts); logView = findViewById(R.id.log); zones = findViewById(R.id.zones)
         radar = findViewById(R.id.radar); btnArm = findViewById(R.id.btnArm); progress = findViewById(R.id.replayProgress)
         updateBanner = findViewById(R.id.updateBanner)
+        preflightBtn = findViewById(R.id.btnPreflight)
         applyPlan(ScreenLayout.mainPlan(resources.configuration.screenWidthDp))
         updateBanner.setOnClickListener { startUpdate(this, settings) }
 
@@ -79,7 +86,10 @@ class MainActivity : AppCompatActivity() {
             // armed. The battery-optimisation prompt is only in Settings (never on ARM).
             else if (!askPermissionsBeforeArming()) SentryService.send(this, SentryService.ACTION_ARM)
         }
-        findViewById<View>(R.id.btnTest).setOnClickListener { SentryService.send(this, SentryService.ACTION_TEST) }
+        findViewById<View>(R.id.btnPreflight).setOnClickListener {
+            preflightAskedMs = System.currentTimeMillis()
+            SentryService.send(this, SentryService.ACTION_PREFLIGHT)
+        }
         findViewById<View>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
 
         lifecycleScope.launch {
@@ -89,6 +99,8 @@ class MainActivity : AppCompatActivity() {
                 launch { SentryBus.logFlow.collect { logView.text = it.take(4).joinToString("\n") } }
                 launch { while (true) { delay(1000); render() } }
                 launch { Updater.state.collect { renderUpdateBanner() } }
+                launch { SentryBus.preflight.collect { r -> if (r != null && r.first >= preflightAskedMs && preflightAskedMs > 0) showPreflight(r.second) } }
+                launch { SentryBus.preflightRunning.collect { running -> preflightBtn.text = if (running) "Checking…" else "Pre-flight" } }
             }
         }
         // Sticky state: if Sentry was armed but the service isn't running (e.g. app updated), re-arm.
@@ -144,9 +156,15 @@ class MainActivity : AppCompatActivity() {
             "replay" -> SentryService.send(this, SentryService.ACTION_REPLAY) {
                 it.putExtra(SentryService.EXTRA_SPEED, i.getFloatExtra("speed", 1f).toDouble())
                 it.putExtra(SentryService.EXTRA_CLOUD_VIEW, i.getBooleanExtra("cloud_view", false))
+                // --ez crossing true: the SYNTHETIC crossing variant (COLLISION RISK)
+                it.putExtra(SentryService.EXTRA_CROSSING, i.getBooleanExtra("crossing", false))
             }
-            "test" -> SentryService.send(this, SentryService.ACTION_TEST)
-            "voice_test" -> SentryService.send(this, SentryService.ACTION_VOICE_TEST)
+            "preflight" -> { preflightAskedMs = System.currentTimeMillis(); SentryService.send(this, SentryService.ACTION_PREFLIGHT) }
+            // --es hex a479ef --es id N388KM: the banner's "Got it" / "Ignore"; "quiet": Quiet 5 min
+            "got_it", "ignore" -> SentryService.send(this, if (i.getStringExtra("sentry_action") == "got_it") SentryService.ACTION_GOT_IT else SentryService.ACTION_IGNORE) {
+                it.putExtra("hex", i.getStringExtra("hex")); it.putExtra("id", i.getStringExtra("id"))
+            }
+            "quiet" -> SentryService.send(this, SentryService.ACTION_QUIET)
             // --es station_url http://10.0.2.2:18080 --ez station true
             // --es pinned 1581F7K3C251F00C9B34 --es worker http://10.0.2.2:18081
             // --ef elev 5100 (controller elevation override; NaN clears it)
@@ -156,8 +174,8 @@ class MainActivity : AppCompatActivity() {
                 i.getStringExtra("pinned")?.let { settings.pinnedSerial = it }
                 i.getStringExtra("worker")?.let { settings.workerBase = it }
                 if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
-                // --ez force_bundled true: skip TTS, use the bundled voice (what the RC Plus does, having no TTS engine)
-                if (i.hasExtra("force_bundled")) settings.voiceForceBundled = i.getBooleanExtra("force_bundled", false)
+                // --es style STANDARD|QUIET|LOUD
+                i.getStringExtra("style")?.let { v -> runCatching { settings.alertStyle = com.uasflightdeck.sentry.core.AlertStyle.valueOf(v) } }
             }
         }
         i.removeExtra("sentry_action")
@@ -182,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         zones.textSize = p.bodySp; logView.textSize = p.logSp; logView.maxLines = p.logLines
         for (id in intArrayOf(R.id.droneLabel, R.id.sourcesLabel, R.id.targetsLabel, R.id.calloutsLabel)) findViewById<TextView>(id).textSize = p.labelSp
 
-        for (id in intArrayOf(R.id.btnArm, R.id.btnTest, R.id.btnSettings))
+        for (id in intArrayOf(R.id.btnArm, R.id.btnPreflight, R.id.btnSettings))
             findViewById<View>(id).layoutParams.height = dp(p.buttonHeightDp)
 
         if (p.droneUnderCompass) {
@@ -236,14 +254,14 @@ class MainActivity : AppCompatActivity() {
         val st = SentryBus.state.value
         val now = System.currentTimeMillis()
         val stalled = st.mode != Mode.OFF && now - st.tickMs > 3000
-        val top = st.targets.maxByOrNull { it.severity.rank }
+        val top = st.targets.maxByOrNull { it.tier.rank }
 
         // ── banner ──
         val (text, bg) = when {
             stalled -> "SENTRY NOT RUNNING — engine stalled ${age((now - st.tickMs) / 1000.0)}" to R.color.warning
             st.mode == Mode.OFF -> "DISARMED — NOT WATCHING" to R.color.dim
             st.mode == Mode.REPLAY && top != null && top.severity >= Severity.ADVISORY ->
-                "REPLAY ${st.replayClock} · ${top.severity.label.uppercase()} ${top.displayId}" to sevColRes(top.severity)
+                "REPLAY ${st.replayClock} · ${top.tier.label.uppercase()} ${top.displayId}" to sevColRes(top.severity)
             st.mode == Mode.REPLAY -> "REPLAY ${st.replayClock}" to R.color.replay
             // Bound, aircraft not in the feed: say so, unless a cylinder alert around the controller is up.
             st.waitingForBound && (top == null || top.severity < Severity.ADVISORY) ->
@@ -252,7 +270,7 @@ class MainActivity : AppCompatActivity() {
             st.ownship == null -> "NO DRONE POSITION" to R.color.warning
             !st.ownshipFresh -> "DRONE POSITION LOST · ${age(st.ownshipAgeSec)} old" to R.color.warning
             top != null && top.severity >= Severity.ADVISORY ->
-                "${top.severity.label.uppercase()} · ${top.displayId} ${Geo.cardinalAbbrev(top.bearingDeg)} ${Phrasing.displayDistance(top.distNm)}" to sevColRes(top.severity)
+                "${top.tier.label.uppercase()} · ${top.displayId} ${Geo.cardinalAbbrev(top.bearingDeg)} ${Phrasing.displayDistance(top.distNm)}" to sevColRes(top.severity)
             st.trafficStale -> "TRAFFIC DATA STALE" to R.color.caution
             st.selectionMode == SelectionMode.CONTROLLER && st.cylinders.isEmpty() -> "NO AIRCRAFT PINNED · NO CYLINDER ENABLED" to R.color.caution
             st.selectionMode == SelectionMode.CONTROLLER -> "ARMED · PROTECTING THIS CONTROLLER" to R.color.ok
@@ -341,17 +359,14 @@ class MainActivity : AppCompatActivity() {
                 .tail(27, "$acc ${f?.label?.removePrefix("controller GPS")?.removePrefix(" · ") ?: ""}".take(17), col(R.color.dim), sc)
         }
         if (st.mode == Mode.OFF) {
-            sb.add("Voice".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).tail(21, "starts when armed", col(R.color.dim), sc)
-            sb.add("\nNot armed: no source is being polled and nothing will be announced.", col(R.color.dim))
+            sb.add("Sounds".padEnd(14), col(R.color.ink)).add("OFF    ", col(R.color.dim), true).tail(21, "start when armed", col(R.color.dim), sc)
+            sb.add("\nNot armed: no source is being polled and nothing will be alerted.", col(R.color.dim))
         } else {
-            // v0.3.5: which voice is speaking, "OK (bundled voice)" / "OK (Google TTS)"; never "unavailable" while
-            // the bundled clip bank is loaded (AlertVoice falls back to it whenever TTS is missing or fails).
-            if (st.voiceOk) sb.add("Voice".padEnd(14), col(R.color.ink)).add("OK (${st.voice})\n", col(R.color.ok), true)
-            else {
-                val vl = if (st.voice == "muted in Settings") "MUTED  " else "UNAVAILABLE "
-                sb.add("Voice".padEnd(14), col(R.color.ink)).add(vl, col(R.color.warning), true)
-                    .tail(14 + vl.length, st.voice.take(24), col(R.color.dim), sc)
-            }
+            // v0.4.0: internet (stacked evidence, 10 s hysteresis), poll rates (low power), sounds, vibration.
+            sb.add("Internet".padEnd(14), col(R.color.ink)).add("${st.internet}\n", col(if (st.internetOk) R.color.ok else R.color.warning), true)
+            sb.add("Polling".padEnd(14), col(R.color.ink)).tail(14, st.pollRates, col(R.color.dim), sc)
+            sb.add("Sounds".padEnd(14), col(R.color.ink)).add("${st.sounds}\n", col(if (st.soundsOk) R.color.ok else R.color.caution), true)
+            sb.add("Vibration".padEnd(14), col(R.color.ink)).add("${st.vibration}\n", col(R.color.dim))
         }
         sources.text = sb
 
@@ -363,22 +378,24 @@ class MainActivity : AppCompatActivity() {
         val tc = monoChars(targets)
         if (st.targets.isEmpty()) tb.add(if (st.mode == Mode.OFF) "—" else if (o == null || !st.ownshipFresh) (if (controllerMode) "No controller GPS: nothing computed" else "No ownship: proximity not computed") else "No traffic", col(R.color.dim))
         for (t in st.targets.take(9)) {
-            val c = if (t.severity >= Severity.ADVISORY) sevCol(t.severity) else col(R.color.ink)
+            val c = if (t.tier >= com.uasflightdeck.sentry.core.Tier.ADVISORY) tierCol(t.tier) else col(R.color.ink)
             val v = t.dvFt?.let { (if (t.altEstimated) "≈" else "") + (if (it >= 0) "+" else "-") +
                 String.format(Locale.US, "%,d", kotlin.math.abs(it).toInt()) + "ft" } ?: "alt ?"
-            val tr = when (t.trend) { null -> ""; com.uasflightdeck.sentry.core.Trend.CONVERGING -> "conv"
-                com.uasflightdeck.sentry.core.Trend.DIVERGING -> "div"; com.uasflightdeck.sentry.core.Trend.PASSING -> "pass" }
             tb.add(t.displayId.padEnd(8).take(8), c, true)
                 .add(" ${Geo.cardinalAbbrev(t.bearingDeg).padEnd(2)}", c)
                 .add(String.format(Locale.US, if (t.distNm < 1) " %4.2fnm " else " %4.1fnm ", t.distNm), c)
                 .add(v.padEnd(10), c)
-                .tail(29, "${tr.padEnd(4)} ${age(t.ageSec)} ${t.sources.joinToString("+") { SRC_ABBR[it] ?: it }}", col(R.color.dim), tc)
+                .tail(29, "${age(t.ageSec)} ${t.sources.joinToString("+") { SRC_ABBR[it] ?: it }}", col(R.color.dim), tc)
+            // Tier, time to closest approach, predicted miss, and any mute (with its countdown).
             val extra = ArrayList<String>()
-            val cpa = t.cpa
-            if (t.predictive && cpa != null) extra += "CPA ${Phrasing.displayDistance(cpa.distM / 1852.0)} in ${cpa.tSec.toInt()}s"
+            if (t.tier >= com.uasflightdeck.sentry.core.Tier.ADVISORY) extra += TIER_TAG.getValue(t.tier)
+            val tc2 = t.tCpaSec; val miss = t.missNm
+            if (tc2 != null && miss != null) extra += "CPA ${com.uasflightdeck.sentry.core.Banner.clock(tc2)} miss ${com.uasflightdeck.sentry.core.Banner.dist(miss)}"
+            else if (t.trend == com.uasflightdeck.sentry.core.Trend.DIVERGING) extra += "opening"
+            st.muted[t.hex]?.let { extra += "MUTED $it" }
             if (t.zones.isNotEmpty()) extra += "IN ${t.zones.joinToString()}"
             if (t.groundModeAirborne) extra += "reports GND at speed: alt unknown"
-            if (extra.isNotEmpty()) tb.add("   ${extra.joinToString(" · ")}\n", if (t.predictive) col(R.color.warning) else col(R.color.caution))
+            if (extra.isNotEmpty()) tb.add("   ${extra.joinToString(" · ")}\n", if (st.muted.containsKey(t.hex)) col(R.color.dim) else c)
         }
         targets.text = tb
 
@@ -388,6 +405,28 @@ class MainActivity : AppCompatActivity() {
         radar.active = st.mode != Mode.OFF && st.ownshipFresh
         zones.text = if (st.mode == Mode.OFF) "" else if (st.watchedZones.isEmpty()) "No TFR / geofence within ${settings.tfrRelevanceNm.toInt()} nm"
             else "Watching: " + st.watchedZones.joinToString(" · ")
+    }
+
+    private fun tierCol(t: com.uasflightdeck.sentry.core.Tier) = col(when (t) {
+        com.uasflightdeck.sentry.core.Tier.COLLISION, com.uasflightdeck.sentry.core.Tier.WARNING -> R.color.warning
+        com.uasflightdeck.sentry.core.Tier.CAUTION, com.uasflightdeck.sentry.core.Tier.TRACK -> R.color.caution
+        com.uasflightdeck.sentry.core.Tier.ADVISORY -> R.color.advisory
+        else -> R.color.ink })
+
+    /** The pre-flight result: pass / fail per item with the fix for each failure. */
+    private fun showPreflight(items: List<com.uasflightdeck.sentry.core.Preflight.Item>) {
+        preflightAskedMs = 0
+        val sb = SpannableStringBuilder()
+        for (it in items) {
+            sb.add(if (it.ok) "✓ " else if (it.name == "Vibration") "– " else "✗ ", col(if (it.ok) R.color.ok else if (it.name == "Vibration") R.color.dim else R.color.warning), true)
+            sb.add(it.name, col(R.color.ink), true).add("  ${it.detail}\n", col(R.color.dim))
+            if (!it.ok && it.fix.isNotEmpty()) sb.add("     Fix: ${it.fix}\n", col(R.color.caution))
+        }
+        androidx.appcompat.app.AlertDialog.Builder(this, R.style.Sentry_Dialog)
+            .setTitle(com.uasflightdeck.sentry.core.Preflight.summary(items))
+            .setMessage(sb)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun trimNm(v: Double) = if (v % 1.0 == 0.0) v.toInt().toString() else String.format(Locale.US, "%.1f", v)
@@ -401,7 +440,9 @@ class MainActivity : AppCompatActivity() {
         val sb = SpannableStringBuilder()
         if (list.isEmpty()) sb.add("None yet", col(R.color.dim))
         for (c in list) {
-            sb.add("${c.clock}  ", col(R.color.dim)).add("${c.ev.text}\n", if (c.ev.severity >= Severity.ADVISORY) sevCol(c.ev.severity) else col(R.color.ink), c.ev.severity >= Severity.WARNING)
+            val txt = c.ev.banner?.let { b -> listOf(b.title, b.line3).filter { it.isNotEmpty() }.joinToString(" · ") } ?: c.ev.text
+            sb.add("${c.clock}  ", col(R.color.dim)).add(txt, if (c.ev.severity >= Severity.ADVISORY) sevCol(c.ev.severity) else col(R.color.ink), c.ev.severity >= Severity.WARNING)
+            sb.add(if (c.note.isNotEmpty()) "  (${c.note})\n" else "\n", col(R.color.dim))
         }
         callouts.text = sb
     }

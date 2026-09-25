@@ -36,6 +36,10 @@ object FieldRules {
     fun keepLastValid(text: String, spec: NumSpec, lastValid: Double): Double =
         (parseNumber(text, spec) as? Parsed.Ok)?.value ?: lastValid
 
+    /** TRACK >= WARNING >= COLLISION horizons, and TRACK miss >= WARNING miss. */
+    fun predictionOrdered(track: Double, warning: Double, collision: Double, trackMiss: Double, warnMiss: Double) =
+        track >= warning && warning >= collision && trackMiss >= warnMiss
+
     /** Advisory ≥ caution ≥ warning > 0. */
     fun ringsOrdered(advisory: Double, caution: Double, warning: Double) =
         warning > 0 && caution >= warning && advisory >= caution
@@ -70,7 +74,17 @@ object FieldRules {
     val RING = NumSpec(0.1, 50.0, "nm")
     val CEILING_ABOVE = NumSpec(100.0, 20_000.0, "ft")
     val BARO_CORRECTION = NumSpec(-2_000.0, 2_000.0, "ft")
-    val CPA_HORIZON = NumSpec(5.0, 300.0, "s")
+    val PRED_SEC = NumSpec(10.0, 600.0, "s")
+    val PRED_MISS_NM = NumSpec(0.05, 5.0, "nm")
+    val COLLISION_MISS_FT = NumSpec(100.0, 3_000.0, "ft")
+    val COLLISION_VERT_FT = NumSpec(50.0, 2_000.0, "ft")
+    val CORRIDOR_DEG = NumSpec(0.0, 20.0, "°")
+    val ZONE_ALERT_NM = NumSpec(0.0, 50.0, "nm")
+    val REPEAT_SEC = NumSpec(6.0, 300.0, "s")
+    val COLLISION_REPEAT_SEC = NumSpec(1.0, 30.0, "s")
+    val BANNER_SEC = NumSpec(2.0, 30.0, "s")
+    val GOT_IT_SEC = NumSpec(10.0, 600.0, "s")
+    val QUIET_MIN = NumSpec(1.0, 60.0, "min")
     val TFR_RELEVANCE = NumSpec(0.0, 100.0, "nm")
     val TARGETS_AIRCRAFT = NumSpec(0.5, 100.0, "nm")
     val TARGETS_CONTROLLER = NumSpec(0.5, 100.0, "nm")

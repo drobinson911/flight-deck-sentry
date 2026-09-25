@@ -35,8 +35,17 @@ data class UiState(
     val targetsInRadius: Int = 0,
     val watchedZones: List<String> = emptyList(),
     val trafficStale: Boolean = false,
-    val voice: String = "starting",
-    val voiceOk: Boolean = false,
+    /** "ON (Standard)", "QUIET 4:12 left", "OFF in Settings"... */
+    val sounds: String = "",
+    val soundsOk: Boolean = true,
+    val vibration: String = "",
+    /** Internet: "ONLINE" / "OFFLINE" / "…", with how long. */
+    val internet: String = "",
+    val internetOk: Boolean = true,
+    /** The poll rates in use ("airborne · fleet 2 s · cloud 2 s · station 1 s"). */
+    val pollRates: String = "",
+    /** Muted aircraft: hex -> "muted 47 s" / "ignored". */
+    val muted: Map<String, String> = emptyMap(),
     val replayTitle: String? = null,
     val replayClock: String? = null,
     val replayProgress: Float = 0f,
@@ -68,19 +77,23 @@ object SentryBus {
     val state: StateFlow<UiState> = _state
     fun publish(s: UiState) { _state.value = s }
 
-    /** One callout as shown: [clock] is sim time (PDT) in replay, device time live. */
-    data class Callout(val ev: AlertEvent, val clock: String, val replay: Boolean)
+    /** One alert (or pilot action) as shown: [clock] is sim time (PDT) in replay, device time live. [note] = what was done. */
+    data class Callout(val ev: AlertEvent, val clock: String, val replay: Boolean, val note: String = "")
 
     /** Last callouts, newest first. */
     private val callouts = ArrayDeque<Callout>()
     private val _calloutsFlow = MutableStateFlow<List<Callout>>(emptyList())
     val calloutsFlow: StateFlow<List<Callout>> = _calloutsFlow
 
-    @Synchronized fun addCallout(e: AlertEvent, clock: String, replay: Boolean) {
-        callouts.addFirst(Callout(e, clock, replay))
+    @Synchronized fun addCallout(e: AlertEvent, clock: String, replay: Boolean, note: String = "") {
+        callouts.addFirst(Callout(e, clock, replay, note))
         while (callouts.size > 50) callouts.removeLast()
         _calloutsFlow.value = callouts.toList()
     }
+
+    /** The last pre-flight check (null = none run yet), and whether one is running. */
+    val preflight = MutableStateFlow<Pair<Long, List<com.uasflightdeck.sentry.core.Preflight.Item>>?>(null)
+    val preflightRunning = MutableStateFlow(false)
 
     /** Ring buffer log shown in the UI; everything also goes to Logcat tag "Sentry". */
     private val log = ArrayDeque<String>()
