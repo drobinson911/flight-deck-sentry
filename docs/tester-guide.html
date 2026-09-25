@@ -19,13 +19,13 @@ table{border-collapse:collapse;width:100%;font-size:10pt;margin:4pt 0 8pt} td,th
 
 <h2>1. What it does (and doesn't)</h2>
 <p>Sentry watches the airspace around <b>your drone</b> and <b>notifies you</b> on the controller: a sound, a vibration, and a banner over the flight app. It does not show a map and does not deconflict for you. When it fires, you look at your map or AirSense and decide. It never takes the screen while you're flying, never installs updates while armed, and only ducks the flight app's audio for the second a tone plays.</p>
-<p>It knows where your drone is from your organization's drone feed, and where manned aircraft are from public ADS-B (plus a local receiver if your truck has one). If the drone isn't in the feed yet, it protects the space around the controller instead.</p>
+<p>It knows where your drone is from your organization's drone feed, and where manned aircraft are from public ADS-B (plus a local receiver if your truck has one). If the drone isn't in the feed yet (DroneSense closed, not signed in, or no mission selected), it protects the space around the controller instead.</p>
 
 <h2>2. Install (5 minutes)</h2>
 <ol>
 <li>On the RC Plus, open the browser and go to <span class="mono">github.com/drobinson911/flight-deck-sentry/releases/latest</span>, tap <b>flight-deck-sentry.apk</b>. Allow "install unknown apps" when Android asks. (If you had a version older than 0.3.0, uninstall it first.)</li>
 <li>Open <b>Flight Deck Sentry</b> → <b>Settings</b>. Paste the <b>fleet token</b> (sent to you separately; never share it).</li>
-<li><b>This controller's aircraft:</b> power your drone with the flight app connected, then tap it in the "aircraft in the feed now" list, or type its serial from the registration card. This is permanent for this controller: Sentry watches this aircraft and no other.</li>
+<li><b>This controller's aircraft:</b> <b>Sentry only sees your drone when DroneSense is open, you are signed in, and a mission is selected</b> (that is what puts it in the feed). Do that, power the drone, then tap it in the "aircraft in the feed now" list, or type its serial from the registration card. This is permanent for this controller: Sentry watches this aircraft and no other.</li>
 <li>Back on the main screen tap <b>ARM</b>. Allow notifications and location, and accept the battery-optimisation exemption when asked.</li>
 <li>Tap <b>Pre-flight</b>. Fix anything with a red ✗ (each line tells you how). Green all the way down = ready.</li>
 <li>Switch to your flight app. Sentry keeps running; its banners appear over the flight app.</li>
@@ -85,13 +85,24 @@ table{border-collapse:collapse;width:100%;font-size:10pt;margin:4pt 0 8pt} td,th
 <h2>8. Updating</h2>
 <p>Settings → <b>App update</b> shows installed vs latest and the notes; <b>Download and install</b> does the rest (one tap in Android's installer). Sentry checks once a day on its own and posts a quiet notification when there's a new one. It will never install while you're armed.</p>
 
-<h2>9. What we need from you (testing)</h2>
-<ol>
-<li>First flight: arm Sentry, fly a normal hop with your flight app in front. Tell us: did any banner cover something important? Did the flight app stutter, drop video, or lose audio? Any sign-outs?</li>
-<li>Sounds: could you hear the tone over rotor and road noise? Did the vibration register? Which sound did you pick?</li>
-<li>Alerts: for every TRACK/WARNING you get, note the time and whether it matched what you saw on your map. False alarms and misses are the most useful thing you can send.</li>
-<li>Battery: note the controller's battery drop over a 30-minute flight with Sentry armed vs not.</li>
-<li>Send screenshots of anything confusing. Settings → the log at the bottom of the main screen shows every alert with its time.</li>
-</ol>
+<h2>9. Test plan (you're the pros: try to break it)</h2>
+<p>Test it the way you'd test a radio you were going to bet on. For each item, note the time, what Sentry did, and what you saw on your own map. False alarms and misses are the most valuable thing you can send; "it worked" is second.</p>
+<table>
+<tr><th style="width:26%">Check</th><th>How</th><th style="width:30%">Pass looks like</th></tr>
+<tr><td>Interference with the flight app</td><td>Arm Sentry, fly a normal hop with the flight app in front. Watch video, control latency, audio, sign-outs.</td><td>No stutter, no dropped video, no audio loss beyond the tone's duration, no screen taken over.</td></tr>
+<tr><td>Audibility and feel</td><td>Tap <b>Test</b> on the main screen with rotors turning and road noise. Try each level's sound in Settings.</td><td>Tone heard and vibration felt at the operating position. If not, change the sound and tell us which one worked.</td></tr>
+<tr><td>Silence outside the volume</td><td>Watch traffic that is inside 3 nm but above 1,500 ft over you (airliners, high transits).</td><td>They appear in the target list and make <b>no</b> sound. Any sound for high traffic is a bug.</td></tr>
+<tr><td>Alert timing</td><td>For every TRACK/WARNING, stopwatch: banner time vs when you first saw the aircraft on your map, and how far out it was.</td><td>TRACK about 2 min out, WARNING about 60 s out, for an aircraft pointed at you. Report the numbers.</td></tr>
+<tr><td>Escalation and repeats</td><td>Let a warning run without touching it.</td><td>Repeats get faster as it closes (20 → 12 → 6 s), softer than the first, stop the moment it's diverging, one PASSING, one CLEAR.</td></tr>
+<tr><td>Got it / Ignore / Quiet</td><td>Use each once on a real alert.</td><td>Silence for that aircraft (or 5 min) — and it comes back on its own if the aircraft escalates or turns toward you.</td></tr>
+<tr><td>Internet loss</td><td>Kill the controller's data mid-flight for 2 minutes, then restore.</td><td>One "Internet lost" alert, Sources show offline, one "regained", then normal. No flood.</td></tr>
+<tr><td>Aircraft leaves the feed</td><td>Have the drone's flight app disconnect briefly, or power-cycle after landing.</td><td>"Drone position lost" → "Waiting for this controller's aircraft" → re-binds by itself when it's back.</td></tr>
+<tr><td>Cold start / kill / screen off</td><td>Arm, then force-close Sentry from Recents; separately, turn the screen off for 10 min while armed.</td><td>The service restarts itself and re-arms (status notification returns); alerts still fire with the screen off.</td></tr>
+<tr><td>Wrong or changed aircraft</td><td>Bind the wrong serial on purpose, then fix it in Settings.</td><td>Sentry never watches another drone on its own; the fix takes effect live, no restart.</td></tr>
+<tr><td>Pre-flight honesty</td><td>Run Pre-flight with something deliberately wrong (no token, notifications off).</td><td>The exact item shows red with a fix that works.</td></tr>
+<tr><td>Battery and resources</td><td>Note controller battery at ARM and DISARM for a 30-min flight; repeat without Sentry. (0.4.2 adds a Resources row with CPU/memory/battery-per-hour.)</td><td>Report both numbers; we expect a small difference.</td></tr>
+<tr><td>Two aircraft at once</td><td>When it happens, note which one Sentry talked about first.</td><td>The closer/more severe one first; both in the target list.</td></tr>
+</table>
+<p>Send screenshots of anything confusing and the alert log (bottom of the main screen shows every alert with its time). If Sentry ever does something you'd call dangerous, say so plainly; that goes to the top of the list.</p>
 <p class="warn">Sentry is an aid, not a guarantee: it only sees aircraft that broadcast ADS-B (or that your local receiver hears), and it assumes they keep flying straight. See-and-avoid and your VO still come first.</p>
 </body></html>
