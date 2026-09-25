@@ -44,6 +44,7 @@ table{border-collapse:collapse;width:100%;font-size:10pt;margin:4pt 0 8pt} td,th
 <h2>4. What the alerts mean</h2>
 <table>
 <tr><th style="width:24%">Alert</th><th>When</th><th style="width:30%">What you do</th></tr>
+<tr><td>● <b>ADVISORY / CAUTION</b> (ring entry)</td><td>An aircraft inside 3 nm (ADVISORY) or 1 nm (CAUTION) and inside the altitude band, not predicted to pass close. ADVISORY: one soft tone on entry, then silent banner updates. CAUTION: short sound + vibrate every 20 s while it keeps closing.</td><td>Glance at your map; keep flying.</td></tr>
 <tr><td>▲ <b>TRACK</b> (amber)</td><td>An aircraft's current track carries it through your area within 2 minutes. Popup + one sound.</td><td>Open your map, find it, start planning. Banner counts down.</td></tr>
 <tr><td>⚠ <b>WARNING</b> (red)</td><td>Predicted to pass within ½ mile inside 60 s, or already inside the ½-mile ring. Sound + vibrate; repeats faster as it closes (every 20 → 12 → 6 s), softer on repeats.</td><td>Act now: move perpendicular to its track (the banner's "Clear:" hint), or climb/descend as advised.</td></tr>
 <tr><td>‼ <b>COLLISION RISK</b></td><td>Predicted miss under 500 ft sideways and 300 ft vertically within 60 s, or it will cross your altitude while within ½ mile. Continuous tone every 3 s. Cannot be dismissed.</td><td>Immediate evasive action.</td></tr>
@@ -99,13 +100,13 @@ table{border-collapse:collapse;width:100%;font-size:10pt;margin:4pt 0 8pt} td,th
 <tr><td>Got it / Ignore / Quiet</td><td>Use each once on a real alert.</td><td>Silence for that aircraft (or 5 min) — and it comes back on its own if the aircraft escalates or turns toward you.</td></tr>
 <tr><td>Internet loss</td><td>Kill the controller's data mid-flight for 2 minutes, then restore.</td><td>One "Internet lost" alert, Sources show offline, one "regained", then normal. No flood.</td></tr>
 <tr><td>Aircraft leaves the feed</td><td>Have the drone's flight app disconnect briefly, or power-cycle after landing.</td><td>"Drone position lost" → "Waiting for this controller's aircraft" → re-binds by itself when it's back.</td></tr>
-<tr><td>Screen off / force-close</td><td>Turn the screen off for 10 min while armed. Separately, swipe Sentry away from Recents while armed.</td><td>Alerts still fire with the screen off. Force-closing <b>disarms and shuts Sentry down</b> (0.4.2); it does not come back until you ARM again.</td></tr>
+<tr><td>Screen off / force-close</td><td>Turn the screen off for 10 min while armed. Separately, swipe Sentry away from Recents while armed.</td><td>Alerts still fire with the screen off. Force-closing <b>disarms and shuts Sentry down</b>; it does not come back until you ARM again.</td></tr>
 <tr><td>Wrong or changed aircraft</td><td>Bind the wrong serial on purpose, then fix it in Settings.</td><td>Sentry never watches another drone on its own; the fix takes effect live, no restart.</td></tr>
 <tr><td>Pre-flight honesty</td><td>Run Pre-flight with something deliberately wrong (no token, notifications off).</td><td>The exact item shows red with a fix that works.</td></tr>
-<tr><td>Battery and resources</td><td>Note controller battery at ARM and DISARM for a 30-min flight; repeat without Sentry. (0.4.2 adds a Resources row with CPU/memory/battery-per-hour.)</td><td>Report both numbers; we expect a small difference.</td></tr>
+<tr><td>Battery and resources</td><td>Note controller battery at ARM and DISARM for a 30-min flight; repeat without Sentry. (The Resources row on the main screen shows CPU, memory and battery per hour.)</td><td>Report both numbers; we expect a small difference.</td></tr>
 <tr><td>Two aircraft at once</td><td>When it happens, note which one Sentry talked about first.</td><td>The closer/more severe one first; the other follows with its own banner.</td></tr>
 </table>
 <p>Send screenshots of anything confusing along with the shared log.</p>
-<p><b>Bugs, false alarms and misses are the most valuable thing you can send.</b> Settings → Diagnostics → <b>Share log</b> (0.4.2) packages the last 24 hours of alerts, actions, feed health and resource numbers into a text file you can email from the controller.</p>
+<p><b>Bugs, false alarms and misses are the most valuable thing you can send.</b> Settings → Diagnostics → <b>Share log</b> packages the last 24 hours of alerts, actions, feed health and resource numbers into a text file you can email from the controller.</p>
 <p class="warn">If Sentry ever does anything dangerous, distracting, or simply not useful, say so plainly; that goes to the top of the list. Sentry is an aid, not a guarantee: it only sees aircraft that broadcast ADS-B (online, or via an Overwatch station), and it assumes they keep flying straight. See-and-avoid and your VO still come first.</p>
 </body></html>
