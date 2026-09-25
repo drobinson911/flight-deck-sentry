@@ -392,7 +392,7 @@ class MainActivity : AppCompatActivity() {
             val tc2 = t.tCpaSec; val miss = t.missNm
             if (tc2 != null && miss != null) extra += "CPA ${com.uasflightdeck.sentry.core.Banner.clock(tc2)} miss ${com.uasflightdeck.sentry.core.Banner.dist(miss)}"
             else if (t.trend == com.uasflightdeck.sentry.core.Trend.DIVERGING) extra += "opening"
-            st.muted[t.hex]?.let { extra += "MUTED $it" }
+            st.muted[t.hex]?.let { extra += "MUTED " + it.removePrefix("muted ") }
             if (t.zones.isNotEmpty()) extra += "IN ${t.zones.joinToString()}"
             if (t.groundModeAirborne) extra += "reports GND at speed: alt unknown"
             if (extra.isNotEmpty()) tb.add("   ${extra.joinToString(" · ")}\n", if (st.muted.containsKey(t.hex)) col(R.color.dim) else c)

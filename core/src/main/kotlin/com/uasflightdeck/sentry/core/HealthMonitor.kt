@@ -8,7 +8,7 @@ package com.uasflightdeck.sentry.core
 class HealthMonitor {
     enum class State { WAITING, OK, LOST, DISABLED }
 
-    class Source(val key: String, val spoken: String, val lostAfterSec: Double) {
+    class Source(val key: String, val spoken: String, var lostAfterSec: Double) {
         var enabled = true
         var lastOkMs: Long? = null
         var enabledSinceMs: Long? = null

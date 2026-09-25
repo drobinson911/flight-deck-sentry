@@ -477,6 +477,10 @@ class SentryService : Service() {
         val res = engine.step(now, own, traffic, zones, trafficAgeSec(now))
         val hEvents = health.step(now)
         rates = PollRates.of(if (sel.mode == SelectionMode.PINNED) sel.drone?.isAirborne else null)
+        // "lost" windows follow the poll rate: two missed cycles plus a slow fetch (seen on the emulator at 5 s:
+        // a 15 s window flagged the drone feed lost between two good polls).
+        health.get("fleet")?.lostAfterSec = 20.0 + 2 * rates.fleetMs / 1000.0
+        health.get("cloud")?.lostAfterSec = 20.0 + 2 * rates.cloudMs / 1000.0
         val net = internet.step(now, networkUp, lastReachOkMs, lastReachFailMs)
         output(now, sel.events + res.events + hEvents + listOfNotNull(net), res.targets, "live", null)
         publish(now, own, sel, res, traffic.size, null)
@@ -735,7 +739,7 @@ class SentryService : Service() {
                     vibrator = sound.hasVibrator,
                 )
                 val items = Preflight.items(facts)
-                items.forEach { SentryBus.log("Pre-flight ${if (it.ok) "OK  " else "FAIL"} ${it.name}: ${it.detail}${if (!it.ok && it.fix.isNotEmpty()) " -> ${it.fix}" else ""}") }
+                items.forEach { SentryBus.log("Pre-flight ${if (it.ok) "OK  " else if (it.name == "Vibration") "n/a " else "FAIL"} ${it.name}: ${it.detail}${if (!it.ok && it.fix.isNotEmpty()) " -> ${it.fix}" else ""}") }
                 SentryBus.preflight.value = System.currentTimeMillis() to items
                 delay(2_600)                                              // let the warning sound finish
                 val summary = Preflight.summary(items)

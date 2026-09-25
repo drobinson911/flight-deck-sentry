@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The traffic banner's fixed four-line shape (v0.4.0). BigTextStyle can't be used for the heads-up: Android
+  collapses its newlines into one line there. Used for the heads-up and the expanded form; banner_2line.xml
+  (title + where) is the collapsed form in the shade.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+    <TextView android:id="@+id/bTitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Title" android:textStyle="bold" android:textSize="17sp" android:maxLines="1" />
+    <TextView android:id="@+id/bLine2" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:maxLines="1" />
+    <TextView android:id="@+id/bLine3" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:textStyle="bold" android:maxLines="1" />
+    <TextView android:id="@+id/bLine4" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:maxLines="1" />
+</LinearLayout>

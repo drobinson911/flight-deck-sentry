@@ -113,13 +113,28 @@ class Notifier(private val ctx: Context) {
     fun trafficId(hex: String) = 1000 + (hex.hashCode() and 0x7FFF)
     private fun houseId(key: String) = 40_000 + (key.hashCode() and 0x3FFF)
 
+    /** Track amber, warning red, collision risk red (with "‼"), passing / clear grey. */
     private fun colorFor(tier: Tier?, title: String) = ContextCompat.getColor(ctx, when {
-        title.startsWith("●") || title.startsWith("○") -> R.color.dim
-        tier == Tier.COLLISION || tier == Tier.WARNING -> R.color.warning
-        tier == Tier.TRACK || tier == Tier.CAUTION -> R.color.caution
-        tier == Tier.ADVISORY -> R.color.advisory
-        else -> R.color.caution
+        title.startsWith("●") || title.startsWith("○") -> R.color.banner_grey
+        tier == Tier.COLLISION || tier == Tier.WARNING -> R.color.banner_red
+        tier == Tier.TRACK || tier == Tier.CAUTION -> R.color.banner_amber
+        tier == Tier.ADVISORY -> R.color.banner_blue
+        else -> R.color.banner_amber
     })
+
+    private fun views(layout: Int, b: BannerText, tier: Tier?): android.widget.RemoteViews {
+        val rv = android.widget.RemoteViews(ctx.packageName, layout)
+        rv.setTextViewText(R.id.bTitle, b.title)
+        rv.setTextColor(R.id.bTitle, colorFor(tier, b.title))
+        rv.setTextViewText(R.id.bLine2, b.line2)
+        if (layout != R.layout.banner_2line) {
+            rv.setTextViewText(R.id.bLine3, b.line3)
+            rv.setViewVisibility(R.id.bLine3, if (b.line3.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+            rv.setTextViewText(R.id.bLine4, b.line4 ?: "")
+            rv.setViewVisibility(R.id.bLine4, if (b.line4.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+        }
+        return rv
+    }
 
     private fun trafficNotification(hex: String, id: String, b: BannerText, tier: Tier?, alert: Boolean, silent: Boolean): Notification {
         val nb = NotificationCompat.Builder(ctx, CH_TRAFFIC)
@@ -127,7 +142,13 @@ class Notifier(private val ctx: Context) {
             .setColor(colorFor(tier, b.title))
             .setContentTitle(b.title)
             .setContentText(b.line2)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(b.body))
+            // Fixed four lines (title, where, prediction, hint) on the heads-up and when expanded; the system adds the
+            // app header and the action buttons around it. Body tap = expand only (no content intent).
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(views(R.layout.banner_2line, b, tier))
+            .setCustomBigContentView(views(R.layout.banner_4line, b, tier))
+            // With the action row the heads-up has ~58 dp of text: three rows. COLLISION RISK has no actions: four lines.
+            .setCustomHeadsUpContentView(views(if (tier == Tier.COLLISION) R.layout.banner_4line else R.layout.banner_headsup, b, tier))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(if (tier != null && tier >= Tier.WARNING) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
             .setShowWhen(false)
@@ -195,7 +216,7 @@ class Notifier(private val ctx: Context) {
         val id = houseId(key)
         val n = NotificationCompat.Builder(ctx, CH_HOUSE)
             .setSmallIcon(R.drawable.ic_stat_sentry)
-            .setColor(ContextCompat.getColor(ctx, R.color.advisory))
+            .setColor(ContextCompat.getColor(ctx, R.color.banner_blue))
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
