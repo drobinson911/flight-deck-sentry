@@ -1,53 +1,53 @@
-# 0.4.0 SYNTHETIC crossing replay at 1x (COLLISION RISK), another app in front; final build (run E)
+# 0.4.1 SYNTHETIC crossing demo replay at 1x (COLLISION RISK), another app in front (regenerated for 0.4.1)
 --------- beginning of main
-20:32:55.071 Service destroyed (mode=OFF)
+22:23:36.261 Service destroyed (mode=OFF)
 --------- beginning of system
-20:32:58.492 Service created
-20:32:58.653 REPLAY start: Demo encounter: DEMO-1 vs N388KM (SYNTHETIC crossing variant) at 1.0x
-20:32:58.683 Controller GPS listening
-20:32:58.692 ALERT[replay] 11:51:50 PDT INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-1 Pilot, this controller's aircraft.
-20:32:58.739 SOUND bound/full level_default
-20:33:22.692 ALERT[replay] 11:52:14 PDT TRACK ALERT TRAFFIC/ESCALATION sound=track/full banner=POPUP: ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · 700 below, climbing · Passing within 1.0 mi in 1:19 · Clear: move NW ↑ S=11.84
-20:33:22.716 SOUND track/full level_default · alert latency 0.1 s (TRACK ALERT a479ef)
-20:33:52.710 ALERT[replay] 11:52:44 PDT TRACK ALERT TRAFFIC/UPDATE sound=- banner=SILENT: ▲ TRACK · N388KM Cirrus · SW 2.5 mi · 160 kt · 500 below, climbing · Passing within 0.9 mi in 0:50 · Clear: move NW ↑ S=7.71
-20:34:05.720 ALERT[replay] 11:52:57 PDT COLLISION RISK TRAFFIC/ESCALATION sound=collision/full banner=POPUP: ‼ COLLISION RISK · N388KM · SW 1.9 mi · 155 kt · 400 below, climbing · 400 below, climbing through your altitude · 43 s · Clear: move NW ↑ S=5.92
-20:34:05.752 SOUND collision/full level_default · alert latency 0.5 s (COLLISION RISK a479ef)
-20:34:08.722 ALERT[replay] 11:53:00 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.8 mi · 155 kt · 400 below, climbing · Closest 2,600 ft in 0:37, 100 below · Clear: move NW ↑ S=5.54
-20:34:08.739 SOUND collision/full level_default
-20:34:11.725 ALERT[replay] 11:53:03 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.6 mi · 156 kt · 300 below, climbing · Closest 1,700 ft in 0:29, 100 below · Clear: move NW ↑ S=4.94
-20:34:11.750 SOUND collision/full level_default
-20:34:13.727 ALERT[replay] 11:53:05 PDT WARNING TRAFFIC/DOWNGRADE sound=- banner=SILENT: ⚠ WARNING · N388KM · SW 1.5 mi · 156 kt · 300 below, climbing · Closest 1,600 ft in 0:27 · Clear: move NW ↑ S=4.64
-20:34:14.728 ALERT[replay] 11:53:06 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.5 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 34 s · Clear: move SE ↑ S=4.61
-20:34:14.746 SOUND collision/full level_default
-20:34:17.730 ALERT[replay] 11:53:09 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.4 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=4.24
-20:34:17.746 SOUND collision/full level_default
-20:34:20.732 ALERT[replay] 11:53:12 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.3 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=3.92
-20:34:20.751 SOUND collision/full level_default
-20:34:23.734 ALERT[replay] 11:53:15 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.1 mi · 158 kt · 200 below, climbing · 200 below, climbing through your altitude · 26 s · Clear: move NW ↑ S=3.28
-20:34:23.752 SOUND collision/full level_default
-20:34:26.738 ALERT[replay] 11:53:18 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,800 ft · 159 kt · 200 below, climbing · 200 below, climbing through your altitude · 22 s · Clear: move NW ↑ S=2.94
-20:34:26.760 SOUND collision/full level_default
-20:34:29.741 ALERT[replay] 11:53:21 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,100 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.58
-20:34:29.763 SOUND collision/full level_default
-20:34:31.741 ALERT[replay] 11:53:23 PDT COLLISION RISK TFR_ENTRY/OTHER sound=- banner=NONE: Traffic entering TFR 0/0000: SW 4,700 ft · 160 kt · 200 below, climbing S=2.35
-20:34:32.742 ALERT[replay] 11:53:24 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 4,500 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.29
-20:34:32.760 SOUND collision/full level_default
-20:34:35.744 ALERT[replay] 11:53:27 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,800 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=1.94
-20:34:35.764 SOUND collision/full level_default
-20:34:38.745 ALERT[replay] 11:53:30 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,100 ft · 158 kt · 100 below, climbing · 100 below, climbing through your altitude · 12 s · Clear: move NW ↑ S=1.54
-20:34:38.760 SOUND collision/full level_default
-20:34:41.746 ALERT[replay] 11:53:33 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 2,400 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=1.21
-20:34:41.764 SOUND collision/full level_default
-20:34:44.748 ALERT[replay] 11:53:36 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 1,900 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=0.98
-20:34:44.766 SOUND collision/full level_default
-20:34:47.750 ALERT[replay] 11:53:39 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SE 1,200 ft · 159 kt · same alt, climbing · same alt, climbing through your altitude · 3 s · Clear: move NW ↑ S=0.62
-20:34:47.764 SOUND collision/full level_default
-20:34:50.753 ALERT[replay] 11:53:42 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · E 1,500 ft · 160 kt · same alt, climbing · same alt, climbing through your altitude · 0 s · Clear: move NW ↑ S=0.61
-20:34:50.766 SOUND collision/full level_default
-20:34:53.755 ALERT[replay] 11:53:45 PDT WARNING PASSING/OTHER sound=passing/full banner=SILENT: ● PASSING · N388KM · E 2,000 ft · 160 kt · same alt, climbing · Diverging · closest was 1,200 ft S=0.61
-20:34:53.787 SOUND passing/full level_default
-20:35:04.763 ALERT[replay] 11:53:56 PDT CAUTION TRAFFIC/DOWNGRADE sound=- banner=SILENT: ◆ CAUTION · N388KM · NE 4,400 ft · 161 kt · 100 above, climbing · Not closing S=0.61
-20:35:16.772 ALERT[replay] 11:54:08 PDT ADVISORY TRAFFIC/DOWNGRADE sound=- banner=SILENT: △ ADVISORY · N388KM Cirrus · NE 1.2 mi · 163 kt · 200 above, climbing · Not closing S=0.61
-20:36:02.810 ALERT[replay] 11:54:54 PDT NONE CLEAR/OTHER sound=- banner=CANCEL: ○ CLEAR · N388KM · Outside 3.0 mi ·  S=0.61
-20:36:39.843 REPLAY finished
-20:36:47.851 Service destroyed (mode=OFF)
+22:23:40.851 Service created
+22:23:41.018 REPLAY start: Demo encounter: DEMO-1 vs N388KM (SYNTHETIC crossing variant) at 1.0x
+22:23:41.023 ALERT[replay] 11:51:50 PDT INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-1 Pilot, this controller's aircraft.
+22:23:41.026 Controller GPS listening
+22:23:41.092 SOUND bound/full level_default
+22:24:05.035 ALERT[replay] 11:52:14 PDT TRACK ALERT TRAFFIC/ESCALATION sound=track/full banner=POPUP: ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · 700 below, climbing · Passing within 1.0 mi in 1:19 · Clear: move NW ↑ S=11.84
+22:24:05.067 SOUND track/full level_default · alert latency 0.1 s (TRACK ALERT a479ef)
+22:24:35.056 ALERT[replay] 11:52:44 PDT TRACK ALERT TRAFFIC/UPDATE sound=- banner=SILENT: ▲ TRACK · N388KM Cirrus · SW 2.5 mi · 160 kt · 500 below, climbing · Passing within 0.9 mi in 0:50 · Clear: move NW ↑ S=7.71
+22:24:48.061 ALERT[replay] 11:52:57 PDT COLLISION RISK TRAFFIC/ESCALATION sound=collision/full banner=POPUP: ‼ COLLISION RISK · N388KM · SW 1.9 mi · 155 kt · 400 below, climbing · 400 below, climbing through your altitude · 43 s · Clear: move NW ↑ S=5.92
+22:24:48.111 SOUND collision/full level_default · alert latency 0.6 s (COLLISION RISK a479ef)
+22:24:51.063 ALERT[replay] 11:53:00 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.8 mi · 155 kt · 400 below, climbing · Closest 2,600 ft in 0:37, 100 below · Clear: move NW ↑ S=5.54
+22:24:51.090 SOUND collision/full level_default
+22:24:54.071 ALERT[replay] 11:53:03 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.6 mi · 156 kt · 300 below, climbing · Closest 1,700 ft in 0:29, 100 below · Clear: move NW ↑ S=4.94
+22:24:54.273 SOUND collision/full level_default
+22:24:56.072 ALERT[replay] 11:53:05 PDT WARNING TRAFFIC/DOWNGRADE sound=- banner=SILENT: ⚠ WARNING · N388KM · SW 1.5 mi · 156 kt · 300 below, climbing · Closest 1,600 ft in 0:27 · Clear: move NW ↑ S=4.64
+22:24:57.072 ALERT[replay] 11:53:06 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.5 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 34 s · Clear: move SE ↑ S=4.61
+22:24:57.115 SOUND collision/full level_default
+22:25:00.075 ALERT[replay] 11:53:09 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.4 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=4.24
+22:25:00.111 SOUND collision/full level_default
+22:25:03.076 ALERT[replay] 11:53:12 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.3 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=3.92
+22:25:03.121 SOUND collision/full level_default
+22:25:06.077 ALERT[replay] 11:53:15 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.1 mi · 158 kt · 200 below, climbing · 200 below, climbing through your altitude · 26 s · Clear: move NW ↑ S=3.28
+22:25:06.130 SOUND collision/full level_default
+22:25:09.078 ALERT[replay] 11:53:18 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,800 ft · 159 kt · 200 below, climbing · 200 below, climbing through your altitude · 22 s · Clear: move NW ↑ S=2.94
+22:25:09.098 SOUND collision/full level_default
+22:25:12.081 ALERT[replay] 11:53:21 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,100 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.58
+22:25:12.118 SOUND collision/full level_default
+22:25:14.083 ALERT[replay] 11:53:23 PDT COLLISION RISK TFR_ENTRY/OTHER sound=- banner=NONE: Traffic entering TFR 0/0000: SW 4,700 ft · 160 kt · 200 below, climbing S=2.35
+22:25:15.083 ALERT[replay] 11:53:24 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 4,500 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.29
+22:25:15.102 SOUND collision/full level_default
+22:25:18.086 ALERT[replay] 11:53:27 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,800 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=1.94
+22:25:18.129 SOUND collision/full level_default
+22:25:21.087 ALERT[replay] 11:53:30 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,100 ft · 158 kt · 100 below, climbing · 100 below, climbing through your altitude · 12 s · Clear: move NW ↑ S=1.54
+22:25:21.124 SOUND collision/full level_default
+22:25:24.090 ALERT[replay] 11:53:33 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 2,400 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=1.21
+22:25:24.113 SOUND collision/full level_default
+22:25:27.092 ALERT[replay] 11:53:36 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 1,900 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=0.98
+22:25:27.114 SOUND collision/full level_default
+22:25:30.094 ALERT[replay] 11:53:39 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SE 1,200 ft · 159 kt · same alt, climbing · same alt, climbing through your altitude · 3 s · Clear: move NW ↑ S=0.62
+22:25:30.120 SOUND collision/full level_default
+22:25:33.096 ALERT[replay] 11:53:42 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · E 1,500 ft · 160 kt · same alt, climbing · same alt, climbing through your altitude · 0 s · Clear: move NW ↑ S=0.61
+22:25:33.118 SOUND collision/full level_default
+22:25:36.097 ALERT[replay] 11:53:45 PDT WARNING PASSING/OTHER sound=passing/full banner=SILENT: ● PASSING · N388KM · E 2,000 ft · 160 kt · same alt, climbing · Diverging · closest was 1,200 ft S=0.61
+22:25:36.132 SOUND passing/full level_default
+22:25:47.103 ALERT[replay] 11:53:56 PDT CAUTION TRAFFIC/DOWNGRADE sound=- banner=SILENT: ◆ CAUTION · N388KM · NE 4,400 ft · 161 kt · 100 above, climbing · Not closing S=0.61
+22:25:59.109 ALERT[replay] 11:54:08 PDT ADVISORY TRAFFIC/DOWNGRADE sound=- banner=SILENT: △ ADVISORY · N388KM Cirrus · NE 1.2 mi · 163 kt · 200 above, climbing · Not closing S=0.61
+22:26:45.135 ALERT[replay] 11:54:54 PDT NONE CLEAR/OTHER sound=- banner=CANCEL: ○ CLEAR · N388KM · Outside 3.0 mi ·  S=0.61
+22:27:22.173 REPLAY finished
+22:27:30.185 Service destroyed (mode=OFF)

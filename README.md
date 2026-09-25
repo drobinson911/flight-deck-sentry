@@ -5,17 +5,17 @@ while **DroneSense** flies the drone, and it **notifies**: a sound from the cont
 heads-up banner when a crewed aircraft is predicted to come close to the drone, gets close, or enters a TFR/geofence
 at the drone. The pilot then looks at AirSense / ForeFlight and acts. No map, no voice, never in DroneSense's way.
 
-Version **0.4.0** (the owner's agreed plan, 2026-09-24). Everything below describes 0.4.0; the short history at
-the end says what came before.
+Version **0.4.1** (0.4.0, the owner's agreed plan of 2026-09-24, with the replay renamed to a neutral demo encounter).
+Everything below describes 0.4.x; the short history at the end says what came before.
 
 ## Why it exists
 
-In a real encounter recorded from public ADS-B data, Cirrus SR22T **N388KM** crossed TFR 0/0000 and passed about 200 ft below drone
-**DEMO-1** (DJI M4T) at **0.24 nm**. Nothing warned the pilot: a ground ADS-B receiver's audio is easy to miss in road
-noise, ForeFlight doesn't alert, and DroneSense shows no proximity warning. The public ADS-B feed also showed N388KM's
+In a real encounter recorded from public ADS-B data, Cirrus SR22T **N388KM** crossed a TFR and passed about 200 ft
+below a DJI M4T drone at **0.24 nm**. Nothing warned the pilot: a ground ADS-B receiver's audio is easy to miss in
+road noise, ForeFlight doesn't alert, and DroneSense shows no proximity warning. The public ADS-B feed also showed N388KM's
 altitude as `"ground"` for the whole pass, at 160 kt. Sentry exists so this never happens silently again.
 
-Replaying the real data from that day through 0.4.0 (DEMO-1 pinned as this controller's aircraft), the pilot gets:
+Replaying that recorded encounter through 0.4.0 (the demo drone DEMO-1 pinned as this controller's aircraft), the pilot gets:
 
 | Replay time (PDT) | Tier | Sound | Banner (title · where · prediction · hint) |
 |---|---|---|---|
@@ -269,11 +269,11 @@ notification.
 main v0.4.0`. `release.yml` checks tag == VERSION, runs the tests, builds `assembleRelease` with the repository
 secrets, verifies the release certificate (SHA-256 `07d612bf02fcdfcc3a617d091909bb83d3e44cfae7e58f34bd146b6a75cc51dc`)
 and attaches `flight-deck-sentry.apk` + `.sha256`. Pilot release notes come from `docs/release-notes/<tag>.md`. The
-keystore is never in the repo; see `.claude/memory/reference_sentry_release.md`.
+keystore is never in the repo (its location is in the maintainer's private notes).
 
 ## Replay mode
 
-Settings → **Replay: demo encounter** plays the real DEMO-1 and N388KM tracks and TFR 0/0000 through the same
+Settings → **Replay: demo encounter** plays the recorded drone track (as DEMO-1), N388KM's track and the TFR (as 0/0000) through the same
 selector, engine, sounds and banners used live (1× / 4×; optional public-feed view; optional **synthetic crossing
 variant** for COLLISION RISK). Debug builds over adb:
 
@@ -308,18 +308,20 @@ COLLISION RISK (synthetic crossing replay; no Got it / Ignore) · **72** replay 
 56 s", the action in Last alerts) · **73** armed live, waiting for this controller's aircraft · **74** the status
 notification with Disarm / Open Sentry · **75** the pre-flight result (emulator: no GPS fix, replay serial not in the
 feed) · **76–77** Settings → Prediction · **78** Cadence & alert style · **79** Sounds & vibration · **80** the sound
-picker (the emulator's picker is Google's Sounds app; the RC Plus shows Android's own). Earlier screenshots (01–68)
-belong to 0.1–0.3.5 and are kept for history.
+picker (the emulator's picker is Google's Sounds app; the RC Plus shows Android's own). **72** was retaken on 0.4.1
+(demo replay). The remaining earlier screenshots (01–68) belong to 0.1–0.3.5 and are kept for history; the ones
+that showed the old replay names or live fleet callsigns were removed.
 
 ## History
 
-0.1–0.2 (2026-09-23): rings, predictive CPA and TFR alerts, spoken with text-to-speech; drone selection. 0.3: pinned
+0.1–0.2: rings, predictive CPA and TFR alerts, spoken with text-to-speech; drone selection. 0.3: pinned
 serial, self-update. 0.3.3: one bound aircraft, surface-to-ceiling volume, DroneSense coexistence. 0.3.4: Settings
 auto-save. 0.3.5: the RC Plus turned out to have no text-to-speech engine, so Sentry shipped its own recorded voice.
 **0.4.0 removes the voice entirely** (owner decision): spoken callouts were slow to parse over rotor and road noise
 and competed with the radio; a distinct sound + a glanceable banner, then a look at AirSense / ForeFlight, is faster.
 The prediction model, tiers and cadence were redesigned with the owner and tuned on a fleet simulation of 86 real
-flights. See `docs/DESIGN.md`.
+flights. 0.4.1 renames the bundled replay to a neutral demo encounter (placeholder drone, callsign and TFR id; the
+recorded geometry and timing are unchanged). See `docs/DESIGN.md`.
 
 ## Layout
 

@@ -42,9 +42,10 @@ class ReplayScenario(
 }
 
 /**
- * Demo encounter: Cirrus SR22T N388KM (hex a479ef) crossed TFR
- * 0/0000 (SFC-8,500 ft MSL) and passed ~0.24 nm from DEMO-1 (DJI M4T) at
- * 11:53:40 PDT. Data: local incident data
+ * Demo encounter: a real encounter recorded from public ADS-B data. Cirrus SR22T
+ * N388KM (hex a479ef) crossed a TFR (SFC-8,500 ft MSL; named "0/0000" here) and
+ * passed ~0.24 nm from the demo drone DEMO-1 (DJI M4T) at 11:53:40 PDT. The drone
+ * name, callsign, serial and TFR id are placeholders; the geometry and timing are real.
  */
 object DemoReplayFixture {
     const val TFR_ENTRY_MS = 1790189602485L     // 11:53:22.485 PDT
@@ -59,15 +60,15 @@ object DemoReplayFixture {
     const val CROSSING_FPM = 500.0
 
     /**
-     * The drone's DroneSense-style callsign in the replay. The recorded DEMO-1
+     * The drone's DroneSense-style callsign in the replay. The recorded drone
      * track carries no callsign field; "DEMO-1 Pilot" is added so the replay
      * drone reads like one typed in DroneSense. Selection is by its synthetic serial.
      */
     const val DRONE_CALLSIGN = "DEMO-1 Pilot"
 
     /**
-     * SYNTHETIC airframe serial for the replay drone. The recorded DEMO-1 track
-     * carries no serial; this placeholder (DJI-style shape, NOT DEMO-1's real
+     * SYNTHETIC airframe serial for the replay drone. The recorded drone track
+     * carries no serial; this placeholder (DJI-style shape, not a real
      * serial) is added so the replay exercises "This controller's aircraft".
      */
     const val DRONE_SERIAL = "1581F7K3C251F00C9B34"

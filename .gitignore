@@ -14,3 +14,6 @@ secrets.properties
 
 # python bytecode
 __pycache__/
+
+# maintainer working notes (kept locally, never published)
+.claude/

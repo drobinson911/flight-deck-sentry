@@ -12,6 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Privacy gate: this repo is public. It must never name the owner, a real incident, a real TFR or a
+      # real unit callsign. The pattern is stored base64-encoded so this file doesn't contain the strings it
+      # blocks. Case-insensitive, over every tracked text file, every tracked path and the commit message.
+      - name: Forbidden identifying strings
+        run: |
+          pat="$(echo 'KF58W15kXSlyb2JpbnNvbnxmbG9yaXN0b258KF58W15hLXowLTldKXVyLT9bMC05XXsyfShbXjAtOV18JCl8NlsvXyBdNTAyMXx0YW8tPzQxM3xkb25hbGR8aW5jaWRlbnQtcmVwb3J0cw==' | base64 -d)"
+          bad=0
+          if git grep -nIiE "$pat" -- .; then bad=1; fi
+          if git ls-files | grep -iE "$pat"; then bad=1; fi
+          if git log -1 --format=%B | grep -iE "$pat"; then bad=1; fi
+          if [ "$bad" = 1 ]; then echo "::error::forbidden identifying string found (see the lines above)"; exit 1; fi
+          echo "clean"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

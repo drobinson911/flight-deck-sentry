@@ -350,7 +350,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         section(right, "Replay (see it work)").apply {
-            addView(note("Plays a real encounter recorded from public ADS-B data (DEMO-1 vs N388KM, TFR 0/0000) through the live engine, sounds and banners."))
+            addView(note("Plays a real encounter recorded from public ADS-B data (demo drone DEMO-1 vs N388KM, Demo TFR 0/0000) through the live engine, sounds and banners."))
             val speeds = RadioGroup(this@SettingsActivity).apply { orientation = RadioGroup.HORIZONTAL; setOnCheckedChangeListener { _, _ -> scheduleAutoSave() } }
             val r1 = radio("1×", 101); val r4 = radio("4×", 104)
             speeds.addView(r1); speeds.addView(r4)

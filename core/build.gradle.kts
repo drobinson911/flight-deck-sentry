@@ -1,7 +1,7 @@
 // Pure Kotlin/JVM module: the alert engine, geodesy, CPA math and every feed
 // parser. It has NO Android dependency on purpose, so the logic that decides
 // whether a pilot hears "Warning, traffic" is unit-tested on the JVM against
-// a real encounter recorded from public ADS-B data.
+// a real encounter recorded from public ADS-B data (the demo replay).
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }
@@ -21,7 +21,7 @@ dependencies {
 }
 
 tasks.test {
-    // The demo fixture lives in the app's assets so the app replays
+    // The demo replay fixture lives in the app's assets so the app replays
     // exactly the bytes the tests assert on.
     systemProperty("sentry.assets", rootProject.file("app/src/main/assets").absolutePath)
     testLogging {

@@ -587,8 +587,8 @@ class SentryService : Service() {
                 syncSettings()
                 eng.config = settings.engineConfig()
                 sel.config = settings.selectorConfig()
-                // The replay's "fleet feed" is DEMO-1 (callsign "DEMO-1 Pilot"); the
-                // simulated controller sits at DEMO-1's launch point.
+                // The replay's "fleet feed" is the demo drone (callsign "DEMO-1 Pilot"); the
+                // simulated controller sits at its launch point.
                 val drones = sc.dronesAt(t)
                 DroneHistory.observeSession(drones, System.currentTimeMillis())
                 val s = sel.step(t, drones, DemoReplayFixture.launchController(t))
