@@ -197,3 +197,25 @@ object Banner {
         Regex("DH8[A-D]|DHC[0-9]") to "De Havilland",
     )
 }
+
+/**
+ * 0.4.3: what the once-per-second in-place refresh may do to a traffic banner that is on screen.
+ *
+ * Every banner an EVENT posts (an escalation, a zone entry "▣ ENTERING TFR ...", PASSING, a step down) keeps its
+ * title for the banner's display window ([holdUntilMs] = posted + banner duration): the refresh may update the
+ * lines under an unchanged title (the countdown), but it never re-titles an event banner before it has been shown.
+ * 0.4.2 posted "▣ ENTERING TFR 9/9999" and re-titled it "△ ADVISORY" 19 ms later in the same tick, so the pilot
+ * never saw the zone entry. After the window the tier title resumes; a step down still waits for its own event.
+ */
+object BannerRefresh {
+    enum class Action { KEEP, UPDATE }
+
+    fun decide(shown: BannerText, shownTier: Tier?, holdUntilMs: Long, next: BannerText, nextTier: Tier, nowMs: Long): Action {
+        if (next == shown && nextTier == shownTier) return Action.KEEP
+        if (next.title != shown.title) {
+            if (nextTier < (shownTier ?: Tier.NONE)) return Action.KEEP        // a step down waits for its own event
+            if (nowMs < holdUntilMs) return Action.KEEP                         // the event's phrasing is shown first
+        }
+        return Action.UPDATE
+    }
+}

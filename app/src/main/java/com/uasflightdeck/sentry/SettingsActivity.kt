@@ -141,8 +141,8 @@ class SettingsActivity : AppCompatActivity() {
 
         // ── Column A (top on the controller): alert rings + targets shown, controller cylinders, this controller's aircraft ──
         section(left, "Alert rings & protected volume").apply {
-            addView(note("Rings around the drone are live even with it on the pad. Advisory = inside 3 mi (banner only in the " +
-                "Standard style), caution = inside 1 mi, warning = inside 0.5 mi; each only for aircraft inside the volume."))
+            addView(note("Rings around the drone are live even with it on the pad. Advisory = inside 3 mi (Standard style: one short " +
+                "tone + banner on entry, repeats banner-only; Quiet: silent), caution = inside 1 mi, warning = inside 0.5 mi; each only for aircraft inside the volume."))
             val a = num("Advisory ring (nm)", s.advisoryNm, FieldRules.RING)
             val c = num("Caution ring (nm)", s.cautionNm, FieldRules.RING)
             val w = num("Warning ring (nm)", s.warningNm, FieldRules.RING)

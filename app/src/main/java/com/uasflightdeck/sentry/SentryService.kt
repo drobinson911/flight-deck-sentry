@@ -523,7 +523,7 @@ class SentryService : Service() {
         health.get("fleet")?.lostAfterSec = 20.0 + 2 * rates.fleetMs / 1000.0
         health.get("cloud")?.lostAfterSec = 20.0 + 2 * rates.cloudMs / 1000.0
         val net = internet.step(now, networkUp, lastReachOkMs, lastReachFailMs)
-        output(now, sel.events + res.events + hEvents + listOfNotNull(net), res.targets, "live", null)
+        output(now, DroneSelector.merge(sel.events, res.events) + hEvents + listOfNotNull(net), res.targets, "live", null)
         publish(now, own, sel, res, traffic.size, null)
     }
 
@@ -642,7 +642,7 @@ class SentryService : Service() {
                 val traffic = sc.trafficAt(t)
                 val res = eng.step(t, own, traffic, sc.zones + cylinderZones(s), 0.0)
                 rates = PollRates.of(if (s.mode == SelectionMode.PINNED) s.drone?.isAirborne else null)
-                output(t, s.events + res.events, res.targets, "replay", sc)
+                output(t, DroneSelector.merge(s.events, res.events), res.targets, "replay", sc)
                 publish(t, own, s, res, traffic.size, sc)
                 t += 1000
                 delay(maxOf(10L, (1000.0 / sp).toLong() - (System.currentTimeMillis() - t0)))
@@ -698,20 +698,16 @@ class SentryService : Service() {
         }
     }
 
+    /** Title + one line (0.4.3: short enough for one heads-up line at 400 dpi; [Housekeeping]). */
     private fun housekeepingText(ev: AlertEvent): Pair<String, String> = when (ev.kind) {
-        EventKind.INTERNET_LOST -> "Internet offline" to "Cloud traffic, the drone feed and TFR updates need it. The Overwatch station link (if any) keeps working."
-        EventKind.INTERNET_REGAINED -> "Internet back" to "Cloud traffic and the drone feed resume."
-        EventKind.SELECTION -> "Bound aircraft acquired" to ev.text
-        EventKind.OWNSHIP_LOST -> "Bound aircraft lost" to "${ev.text}. Sentry falls back to the controller cylinders if it doesn't return."
-        EventKind.OWNSHIP_REGAINED, EventKind.OWNSHIP_ACQUIRED -> "Bound aircraft back" to ev.text
-        EventKind.SOUNDS_ON -> "Sentry sounds on" to "Quiet is over: traffic sounds are back."
-        EventKind.RESTARTED -> ev.text to if (ev.text == RestartPolicy.ARMED_AFTER_BOOT)
-            "The controller restarted while Sentry was armed: it is armed and watching again." else
-            "Sentry stopped unexpectedly and restarted itself: it is armed and watching again."
         EventKind.PREFLIGHT -> ev.text to (SentryBus.preflight.value?.second?.filter { !it.ok }?.joinToString("\n") { "✗ ${it.name}: ${it.detail}" }
             ?.ifEmpty { "Everything is ready." } ?: "")
-        else -> "Sentry" to ev.text
+        else -> com.uasflightdeck.sentry.core.Housekeeping.text(ev.kind, ev.text, stationLive()) ?: ("Sentry" to ev.text)
     }
+
+    /** The Overwatch station link is enabled and healthy right now (named in "Internet offline" only then). */
+    private fun stationLive(): Boolean = settings.stationEnabled &&
+        health.get("station")?.let { health.stateOf(it, System.currentTimeMillis()) == HealthMonitor.State.OK } == true
 
     /** A pilot action (banner button) or a mute ending: log + "Last alerts", and the status line picks it up. */
     private fun pilotAction(line: String, logOnly: Boolean = false) {
@@ -890,7 +886,7 @@ class SentryService : Service() {
         val parts = ArrayList<String>()
         if (!st.internetOk) parts += "Internet offline"
         parts += who
-        parts += "${st.targets.size} targets"
+        parts += SystemText.count(st.targets.size, "target")
         parts += if (st.soundsOk) "sounds on" else st.sounds.lowercase().replaceFirstChar { it.uppercase() }
         st.muted.entries.sortedBy { it.value }.forEach { (hex, lbl) ->
             parts += "${st.targets.firstOrNull { it.hex == hex }?.displayId ?: hex} $lbl"

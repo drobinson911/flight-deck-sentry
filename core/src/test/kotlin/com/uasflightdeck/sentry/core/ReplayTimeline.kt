@@ -37,7 +37,7 @@ object ReplayTimeline {
                 cylinders.filter { it.enabled }.map { it.toZone(sel.ownship!!.pos) } else emptyList()
             val res = engine.step(t, sel.ownship, sc.trafficAt(t), zones, 0.0)
             val (_, soundsOn) = mutes.step(t, res.targets, res.events)
-            out += OutputPlanner.plan(sel.events + res.events + listOfNotNull(soundsOn), mutes, style, t)
+            out += OutputPlanner.plan(DroneSelector.merge(sel.events, res.events) + listOfNotNull(soundsOn), mutes, style, t)
             modes += t to sel.mode
             views[t] = res.targets
             t += tickMs

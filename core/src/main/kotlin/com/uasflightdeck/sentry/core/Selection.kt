@@ -125,6 +125,18 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
     companion object {
         /** Trimmed, upper-case; null when blank. Serials are compared this way everywhere. */
         fun normaliseSerial(s: String?): String? = s?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
+
+        /**
+         * 0.4.3: one message per tick about the bound aircraft. On a regain after the fallback, the selector
+         * ("Drone position regained · watching X") and the engine ("Drone position regained") both reported it in the
+         * same tick and two pop-ups posted ("acquired" + "back"); only the second was visible. The selector's
+         * binding event wins; the engine's same-tick OWNSHIP_REGAINED / OWNSHIP_ACQUIRED is dropped.
+         */
+        fun merge(selectorEvents: List<AlertEvent>, engineEvents: List<AlertEvent>): List<AlertEvent> {
+            val bound = selectorEvents.any { it.kind == EventKind.OWNSHIP_REGAINED || it.kind == EventKind.SELECTION && it.text.startsWith("Watching") }
+            return selectorEvents + if (!bound) engineEvents else
+                engineEvents.filter { it.kind != EventKind.OWNSHIP_REGAINED && it.kind != EventKind.OWNSHIP_ACQUIRED }
+        }
     }
 
     data class SelectorConfig(
@@ -162,11 +174,13 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
     private var pendingControllerSpeech: String? = null
     private var controllerGpsAnnouncedLost = false
     private var controllerModeSinceMs = 0L
+    /** The serial bound at least once this session: binding it again is a regain ("back"), not an acquisition. */
+    private var boundOnce: String? = null
 
     val currentMode: SelectionMode? get() = mode
 
     fun reset() {
-        mode = null; watched = null; firstMs = null
+        mode = null; watched = null; firstMs = null; boundOnce = null
         pendingControllerSpeech = null; controllerGpsAnnouncedLost = false
     }
 
@@ -198,9 +212,13 @@ class DroneSelector(var config: SelectorConfig = SelectorConfig()) {
         if (newMode == SelectionMode.PINNED) {
             val d = cur!!
             val name = d.callsign ?: d.name
-            if (prevMode != SelectionMode.PINNED)
-                events += AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO,
-                    "Watching $name, this controller's aircraft.")
+            // "acquired" only for the first bind of a session; after a drop-out it is one "back" message (0.4.3).
+            if (prevMode != SelectionMode.PINNED) {
+                events += if (boundOnce == pinned) AlertEvent(nowMs, EventKind.OWNSHIP_REGAINED, Severity.INFO,
+                    "Drone position regained · watching $name")
+                else AlertEvent(nowMs, EventKind.SELECTION, Severity.INFO, "Watching $name, this controller's aircraft.")
+                boundOnce = pinned
+            }
             pendingControllerSpeech = null
             controllerGpsAnnouncedLost = false
         } else {

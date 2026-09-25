@@ -78,8 +78,19 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         drawn.forEach { (nm, col) ->
             ringPaint.color = c(col); ringPaint.alpha = if (active) 200 else 70
             cv.drawCircle(cx, cy, r(nm), ringPaint)
+        }
+        // Ring labels (0.4.3): outer first, up-right of each ring; a label that would overlap one already drawn moves
+        // down-left, and is dropped if that collides too ("1 nm" and "0.5 nm" overlapped on the RC Plus). Each label has a
+        // panel-coloured backing, so one that crosses a ring line reads cleanly.
+        val spots = RadarLabels.place(cx, cy, drawn.map { (nm, _) -> r(nm) to small.measureText(fmt(nm)) }, small.textSize, 4 * k)
+        drawn.forEachIndexed { i, (nm, col) ->
+            val p = spots[i] ?: return@forEachIndexed
+            // A panel-coloured backing (inner labels) so one that sits across another ring stays legible.
+            val w = small.measureText(fmt(nm))
+            fill.color = c(R.color.panel)
+            if (i > 0) cv.drawRect(p.first - 2 * k, p.second - small.textSize * 0.85f, p.first + w + 2 * k, p.second + small.textSize * 0.2f, fill)
             small.color = c(col)
-            cv.drawText(fmt(nm), cx + r(nm) * 0.72f + 4 * k, cy - r(nm) * 0.72f, small)
+            cv.drawText(fmt(nm), p.first, p.second, small)
         }
         // cardinal ticks
         small.color = c(R.color.dim)
@@ -115,4 +126,23 @@ class RadarView @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     }
 
     private fun fmt(nm: Double) = if (nm % 1.0 == 0.0) "${nm.toInt()} nm" else "${"%.2f".format(java.util.Locale.US, nm).trimEnd('0')} nm"
+}
+
+/** Ring-label placement, pure (unit-tested): baseline positions, or null where a label is dropped. */
+object RadarLabels {
+    private data class Box(val l: Float, val t: Float, val r: Float, val b: Float) {
+        fun hits(o: Box) = l < o.r && o.l < r && t < o.b && o.t < b
+    }
+
+    /** [rings]: (radius px, label width px) outer to inner; [textH]: text size px; [pad]: gap to the ring px. */
+    fun place(cx: Float, cy: Float, rings: List<Pair<Float, Float>>, textH: Float, pad: Float): List<Pair<Float, Float>?> {
+        val placed = ArrayList<Box>()
+        return rings.map { (r, w) ->
+            val d = r * 0.72f
+            val upRight = (cx + d + pad) to (cy - d)
+            val downLeft = (cx - d - pad - w) to (cy + d + textH)
+            val pick = listOf(upRight, downLeft).firstOrNull { (x, y) -> val b = Box(x, y - textH, x + w, y + textH * 0.25f); placed.none { it.hits(b) } }
+            pick?.also { (x, y) -> placed += Box(x, y - textH, x + w, y + textH * 0.25f) }
+        }
+    }
 }

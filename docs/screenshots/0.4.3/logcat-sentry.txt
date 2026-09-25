@@ -1,0 +1,223 @@
+09-25 13:14:05.505 I/Sentry  ( 5236): Update check: This build (0.4.3) is newer than the latest release (0.4.2)
+09-25 13:14:08.441 I/Sentry  ( 5236): Service created
+09-25 13:14:08.457 I/Sentry  ( 5236): ARMED (live)
+09-25 13:14:08.461 I/Sentry  ( 5236): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:14:08.470 I/Sentry  ( 5236): Selection: bound to 1581DEMO000000000007
+09-25 13:14:08.477 I/Sentry  ( 5236): ALERT[live] 13:14:08 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:14:08.497 I/Sentry  ( 5236): Controller GPS listening
+09-25 13:14:13.467 I/Sentry  ( 5236): ALERT[live] 13:14:13 INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:14:23.474 I/Sentry  ( 5236): ALERT[live] 13:14:23 CAUTION CONTROLLER_GPS_LOST/OTHER sound=- banner=NONE: Controller GPS unavailable. Nothing protected.
+09-25 13:14:29.482 I/Sentry  ( 5236): ALERT[live] 13:14:29 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:14:29.516 I/Sentry  ( 5236): SOUND bound/full level_default
+09-25 13:14:38.494 I/Sentry  ( 5236): ALERT[live] 13:14:38 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO33 Helicopter · E 1.3 mi · 0 kt · ≈700 above, level · Not closing S=4.20
+09-25 13:14:38.524 I/Sentry  ( 5236): SOUND advisory/short level_default
+09-25 13:14:56.501 I/Sentry  ( 5236): ALERT[live] 13:14:56 ADVISORY TFR_ENTRY/OTHER sound=zone/full banner=POPUP: ▣ ENTERING TFR 9/9999 · DEMO33 · E 1.8 mi · 0 kt · ≈700 above, level · Not closing · Clear: move W S=4.20
+09-25 13:14:56.530 I/Sentry  ( 5236): SOUND zone/full level_default
+09-25 13:15:22.519 I/Sentry  ( 5236): ALERT[live] 13:15:22 INFO TRACK_LOST/OTHER sound=- banner=CANCEL: ○ CLEAR · DEMO33 · Track lost · 
+09-25 13:15:35.529 I/Sentry  ( 5236): ALERT[live] 13:15:35 CAUTION OWNSHIP_LOST/OTHER sound=bound/full banner=POPUP: Drone position lost
+09-25 13:15:35.548 I/Sentry  ( 5236): SOUND bound/full level_default
+09-25 13:15:50.541 I/Sentry  ( 5236): ALERT[live] 13:15:50 CAUTION SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:16:02.552 I/Sentry  ( 5236): ALERT[live] 13:16:02 INFO OWNSHIP_REGAINED/OTHER sound=bound/full banner=POPUP: Drone position regained · watching DEMO-7
+09-25 13:16:02.566 I/Sentry  ( 5236): SOUND bound/full level_default
+09-25 13:16:47.257 I/Sentry  ( 5791): Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.MY_PACKAGE_REPLACED)
+09-25 13:16:47.420 I/Sentry  ( 5791): Service created
+09-25 13:16:47.466 I/Sentry  ( 5791): TFRs: loaded 1 from disk cache
+09-25 13:16:47.486 I/Sentry  ( 5791): ARMED (live)
+09-25 13:16:47.487 I/Sentry  ( 5791): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:16:47.493 I/Sentry  ( 5791): ALERT[live] 13:16:47 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:16:47.498 I/Sentry  ( 5791): ALERT[live] 13:16:47 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+09-25 13:16:47.499 I/Sentry  ( 5791): Selection: bound to 1581DEMO000000000007
+09-25 13:16:47.550 I/Sentry  ( 5791): Controller GPS listening
+09-25 13:16:47.556 I/Sentry  ( 5791): SOUND bound/full level_default
+09-25 13:16:48.491 I/Sentry  ( 5791): ALERT[live] 13:16:48 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:16:48.514 I/Sentry  ( 5791): SOUND bound/full level_default
+09-25 13:17:12.629 I/Sentry  ( 5791): cloud: Failed to connect to /10.0.2.2:18081 (x1)
+09-25 13:17:12.754 I/Sentry  ( 5791): fleet: feed error: Failed to connect to /10.0.2.2:18081 (x1)
+09-25 13:17:22.517 I/Sentry  ( 5791): ALERT[live] 13:17:22 CAUTION INTERNET_LOST/OTHER sound=internet/full banner=POPUP: Internet offline
+09-25 13:17:22.548 I/Sentry  ( 5791): SOUND internet/full level_default
+09-25 13:17:35.533 I/Sentry  ( 5791): ALERT[live] 13:17:35 INFO INTERNET_REGAINED/OTHER sound=internet/full banner=POPUP: Internet back
+09-25 13:17:35.547 I/Sentry  ( 5791): SOUND internet/full level_default
+09-25 13:18:00.552 I/Sentry  ( 5791): ALERT[live] 13:18:00 CAUTION OWNSHIP_LOST/OTHER sound=bound/full banner=POPUP: Drone position lost
+09-25 13:18:00.571 I/Sentry  ( 5791): SOUND bound/full level_default
+09-25 13:18:15.568 I/Sentry  ( 5791): ALERT[live] 13:18:15 CAUTION SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:18:30.584 I/Sentry  ( 5791): ALERT[live] 13:18:30 CAUTION CONTROLLER_GPS_LOST/OTHER sound=- banner=NONE: Controller GPS unavailable. Nothing protected.
+09-25 13:18:37.492 I/Sentry  ( 6181): Service created
+09-25 13:18:37.501 I/Sentry  ( 6181): Restarted after unexpected exit: re-armed
+09-25 13:18:37.528 I/Sentry  ( 6181): TFRs: loaded 1 from disk cache
+09-25 13:18:37.543 I/Sentry  ( 6181): ARMED (live)
+09-25 13:18:37.543 I/Sentry  ( 6181): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:18:37.549 I/Sentry  ( 6181): ALERT[live] 13:18:37 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:18:37.552 I/Sentry  ( 6181): ALERT[live] 13:18:37 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry restarted
+09-25 13:18:37.555 I/Sentry  ( 6181): Selection: bound to 1581DEMO000000000007
+09-25 13:18:37.583 I/Sentry  ( 6181): SOUND bound/full level_default
+09-25 13:18:37.586 I/Sentry  ( 6181): Controller GPS listening
+09-25 13:18:42.556 I/Sentry  ( 6181): ALERT[live] 13:18:42 INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:18:50.850 I/Sentry  ( 6247): Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.MY_PACKAGE_REPLACED)
+09-25 13:18:51.004 I/Sentry  ( 6247): Service created
+09-25 13:18:51.036 I/Sentry  ( 6247): TFRs: loaded 1 from disk cache
+09-25 13:18:51.056 I/Sentry  ( 6247): ARMED (live)
+09-25 13:18:51.056 I/Sentry  ( 6247): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:18:51.061 I/Sentry  ( 6247): ALERT[live] 13:18:51 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:18:51.061 I/Sentry  ( 6247): Selection: bound to 1581DEMO000000000007
+09-25 13:18:51.062 I/Sentry  ( 6247): ALERT[live] 13:18:51 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+09-25 13:18:51.085 I/Sentry  ( 6247): Controller GPS listening
+09-25 13:18:51.092 I/Sentry  ( 6247): SOUND bound/full level_default
+09-25 13:18:56.063 I/Sentry  ( 6247): ALERT[live] 13:18:56 INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:19:06.071 I/Sentry  ( 6247): ALERT[live] 13:19:06 CAUTION CONTROLLER_GPS_LOST/OTHER sound=- banner=NONE: Controller GPS unavailable. Nothing protected.
+09-25 13:19:10.126 I/Sentry  ( 6344): Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.MY_PACKAGE_REPLACED)
+09-25 13:19:10.283 I/Sentry  ( 6344): Service created
+09-25 13:19:10.317 I/Sentry  ( 6344): TFRs: loaded 1 from disk cache
+09-25 13:19:10.334 I/Sentry  ( 6344): ARMED (live)
+09-25 13:19:10.334 I/Sentry  ( 6344): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:19:10.339 I/Sentry  ( 6344): ALERT[live] 13:19:10 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:19:10.340 I/Sentry  ( 6344): ALERT[live] 13:19:10 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+09-25 13:19:10.341 I/Sentry  ( 6344): Selection: bound to 1581DEMO000000000007
+09-25 13:19:10.367 I/Sentry  ( 6344): Controller GPS listening
+09-25 13:19:10.392 I/Sentry  ( 6344): SOUND bound/full level_default
+09-25 13:19:15.343 I/Sentry  ( 6344): ALERT[live] 13:19:15 INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:19:21.349 I/Sentry  ( 6344): ALERT[live] 13:19:21 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:19:21.370 I/Sentry  ( 6344): SOUND bound/full level_default
+09-25 13:19:26.360 I/Sentry  ( 6344): ALERT[live] 13:19:26 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-25 13:19:26.419 I/Sentry  ( 6344): SOUND advisory/short level_default
+09-25 13:20:14.571 I/Sentry  ( 6550): Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.MY_PACKAGE_REPLACED)
+09-25 13:20:14.828 I/Sentry  ( 6550): Service created
+09-25 13:20:14.868 I/Sentry  ( 6550): TFRs: loaded 1 from disk cache
+09-25 13:20:14.884 I/Sentry  ( 6550): ARMED (live)
+09-25 13:20:14.884 I/Sentry  ( 6550): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:20:14.890 I/Sentry  ( 6550): ALERT[live] 13:20:14 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:20:14.891 I/Sentry  ( 6550): ALERT[live] 13:20:14 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+09-25 13:20:14.893 I/Sentry  ( 6550): Selection: bound to 1581DEMO000000000007
+09-25 13:20:14.937 I/Sentry  ( 6550): Controller GPS listening
+09-25 13:20:14.960 I/Sentry  ( 6550): SOUND bound/full level_default
+09-25 13:20:15.889 I/Sentry  ( 6550): ALERT[live] 13:20:15 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:20:15.912 I/Sentry  ( 6550): SOUND bound/full level_default
+09-25 13:20:20.900 I/Sentry  ( 6550): ALERT[live] 13:20:20 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-25 13:20:20.966 I/Sentry  ( 6550): SOUND advisory/short level_default
+09-25 13:20:58.908 I/Sentry  ( 6695): Power-on: re-armed (Sentry was armed at power-off) (android.intent.action.MY_PACKAGE_REPLACED)
+09-25 13:20:59.064 I/Sentry  ( 6695): Service created
+09-25 13:20:59.097 I/Sentry  ( 6695): TFRs: loaded 1 from disk cache
+09-25 13:20:59.115 I/Sentry  ( 6695): ARMED (live)
+09-25 13:20:59.115 I/Sentry  ( 6695): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-25 13:20:59.122 I/Sentry  ( 6695): ALERT[live] 13:20:59 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:20:59.123 I/Sentry  ( 6695): ALERT[live] 13:20:59 CAUTION RESTARTED/OTHER sound=bound/full banner=POPUP: Sentry armed after restart
+09-25 13:20:59.125 I/Sentry  ( 6695): Selection: bound to 1581DEMO000000000007
+09-25 13:20:59.162 I/Sentry  ( 6695): Controller GPS listening
+09-25 13:20:59.171 I/Sentry  ( 6695): SOUND bound/full level_default
+09-25 13:21:00.121 I/Sentry  ( 6695): ALERT[live] 13:21:00 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:21:00.143 I/Sentry  ( 6695): SOUND bound/full level_default
+09-25 13:21:05.135 I/Sentry  ( 6695): ALERT[live] 13:21:05 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-25 13:21:05.228 I/Sentry  ( 6695): SOUND advisory/short level_default
+09-25 13:21:55.718 I/Sentry  ( 6695): REPLAY start: Demo encounter: DEMO-1 vs N388KM (SYNTHETIC crossing variant) at 1.0x
+09-25 13:22:00.724 I/Sentry  ( 6695): ALERT[replay] 11:51:55 PDT INFO SELECTION/OTHER sound=- banner=NONE: Waiting for this controller's aircraft.
+09-25 13:23:01.776 I/Sentry  ( 6695): ALERT[replay] 11:52:56 PDT CAUTION CYLINDER_ENTRY/OTHER sound=- banner=NONE: Traffic entering advisory area: SW 3.0 mi · 156 kt · 2,500 above, climbing S=10.37
+09-25 13:23:01.776 I/Sentry  ( 6695): ALERT[replay] 11:52:56 PDT CAUTION TRAFFIC/ESCALATION sound=caution/full banner=POPUP: ◆ CAUTION · N388KM · SW 3.0 mi · 156 kt · 2,500 above, climbing · Closest 1.0 mi in 1 min 9 s · Clear: move NW S=10.37
+09-25 13:23:01.809 I/Sentry  ( 6695): SOUND caution/full level_default
+09-25 13:23:08.783 I/Sentry  ( 6695): ALERT[replay] 11:53:03 PDT WARNING TRAFFIC/ESCALATION sound=warning/full banner=POPUP: ⚠ WARNING · N388KM · SW 2.6 mi · 156 kt · 2,600 above, climbing · Closest 2,500 ft in 52 s · Clear: move NW S=9.55
+09-25 13:23:08.811 I/Sentry  ( 6695): SOUND warning/full level_default · alert latency 0.3 s (WARNING a479ef)
+09-25 13:23:20.743 I/Sentry  ( 6695): REPLAY stopped
+09-25 13:23:20.747 I/Sentry  ( 6695): Selection: bound to 1581DEMO000000000007
+09-25 13:23:20.750 I/Sentry  ( 6695): ARMED (live)
+09-25 13:23:20.751 I/Sentry  ( 6695): ALERT[live] 13:23:20 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-25 13:23:20.752 I/Sentry  ( 6695): ALERT[live] 13:23:20 INFO SELECTION/OTHER sound=silent (another sound this tick) banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-25 13:23:20.757 I/Sentry  ( 6695): ALERT[live] 13:23:20 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-25 13:23:20.783 I/Sentry  ( 6695): SOUND advisory/short level_default
+09-25 13:23:22.781 I/Sentry  ( 6695): DISARMED
+09-25 13:23:22.787 I/Sentry  ( 6695): FLIGHT SUMMARY armed 2 min 24 s · CPU avg 1.1 % (4.2 % of one core) · peak 4.4 % (17 % of one core) · PSS peak 129 MB · battery used — (charging) · data 220 KB (down 83 KB · up 136 KB) · wake lock 2 min 24 s
+09-25 13:23:26.799 I/Sentry  ( 6695): Service destroyed (mode=OFF)
+09-25 13:23:32.868 I/Sentry  ( 6695): Service created
+09-25 13:23:32.998 I/Sentry  ( 6695): REPLAY start: Demo encounter: DEMO-1 vs N388KM (SYNTHETIC crossing variant) at 1.0x
+09-25 13:23:33.005 I/Sentry  ( 6695): ALERT[replay] 11:51:50 PDT INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-1 Pilot, this controller's aircraft.
+09-25 13:23:33.012 I/Sentry  ( 6695): Controller GPS listening
+09-25 13:23:33.044 I/Sentry  ( 6695): SOUND bound/full level_default
+09-25 13:23:57.018 I/Sentry  ( 6695): ALERT[replay] 11:52:14 PDT TRACK ALERT TRAFFIC/ESCALATION sound=track/full banner=POPUP: ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · 700 below, climbing · Passing within 1.0 mi in 1 min 19 s · Clear: move NW ↑ S=11.84
+09-25 13:23:57.043 I/Sentry  ( 6695): SOUND track/full level_default · alert latency 0.1 s (TRACK ALERT a479ef)
+09-25 13:24:27.036 I/Sentry  ( 6695): ALERT[replay] 11:52:44 PDT TRACK ALERT TRAFFIC/UPDATE sound=- banner=SILENT: ▲ TRACK · N388KM Cirrus · SW 2.5 mi · 160 kt · 500 below, climbing · Passing within 0.9 mi in 50 s · Clear: move NW ↑ S=7.71
+09-25 13:24:40.049 I/Sentry  ( 6695): ALERT[replay] 11:52:57 PDT COLLISION RISK TRAFFIC/ESCALATION sound=collision/full banner=POPUP: ‼ COLLISION RISK · N388KM · SW 1.9 mi · 155 kt · 400 below, climbing · 400 below, climbing through your altitude · 43 s · Clear: move NW ↑ S=5.92
+09-25 13:24:40.079 I/Sentry  ( 6695): SOUND collision/full level_default · alert latency 0.5 s (COLLISION RISK a479ef)
+09-25 13:24:43.051 I/Sentry  ( 6695): ALERT[replay] 11:53:00 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.8 mi · 155 kt · 400 below, climbing · Closest 2,600 ft in 37 s, 100 below · Clear: move NW ↑ S=5.54
+09-25 13:24:43.071 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:24:46.052 I/Sentry  ( 6695): ALERT[replay] 11:53:03 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.6 mi · 156 kt · 300 below, climbing · Closest 1,700 ft in 29 s, 100 below · Clear: move NW ↑ S=4.94
+09-25 13:24:46.093 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:24:49.053 I/Sentry  ( 6695): ALERT[replay] 11:53:06 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.5 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 34 s · Clear: move SE ↑ S=4.61
+09-25 13:24:49.068 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:24:52.054 I/Sentry  ( 6695): ALERT[replay] 11:53:09 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.4 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=4.24
+09-25 13:24:52.076 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:24:55.057 I/Sentry  ( 6695): ALERT[replay] 11:53:12 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.3 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=3.92
+09-25 13:24:55.071 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:24:58.059 I/Sentry  ( 6695): ALERT[replay] 11:53:15 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.1 mi · 158 kt · 200 below, climbing · 200 below, climbing through your altitude · 26 s · Clear: move NW ↑ S=3.28
+09-25 13:24:58.075 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:01.062 I/Sentry  ( 6695): ALERT[replay] 11:53:18 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,800 ft · 159 kt · 200 below, climbing · 200 below, climbing through your altitude · 22 s · Clear: move NW ↑ S=2.94
+09-25 13:25:01.078 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:04.063 I/Sentry  ( 6695): ALERT[replay] 11:53:21 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,100 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.58
+09-25 13:25:04.079 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:06.065 I/Sentry  ( 6695): ALERT[replay] 11:53:23 PDT COLLISION RISK TFR_ENTRY/OTHER sound=- banner=NONE: Traffic entering TFR 0/0000: SW 4,700 ft · 160 kt · 200 below, climbing S=2.35
+09-25 13:25:07.065 I/Sentry  ( 6695): ALERT[replay] 11:53:24 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 4,500 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.29
+09-25 13:25:07.079 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:10.066 I/Sentry  ( 6695): ALERT[replay] 11:53:27 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,800 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=1.94
+09-25 13:25:10.082 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:13.068 I/Sentry  ( 6695): ALERT[replay] 11:53:30 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,100 ft · 158 kt · 100 below, climbing · 100 below, climbing through your altitude · 12 s · Clear: move NW ↑ S=1.54
+09-25 13:25:13.084 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:16.069 I/Sentry  ( 6695): ALERT[replay] 11:53:33 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 2,400 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=1.21
+09-25 13:25:16.085 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:19.071 I/Sentry  ( 6695): ALERT[replay] 11:53:36 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 1,900 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=0.98
+09-25 13:25:19.090 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:22.072 I/Sentry  ( 6695): ALERT[replay] 11:53:39 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SE 1,200 ft · 159 kt · same alt, climbing · same alt, climbing through your altitude · 3 s · Clear: move NW ↑ S=0.62
+09-25 13:25:22.087 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:25.073 I/Sentry  ( 6695): ALERT[replay] 11:53:42 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · E 1,500 ft · 160 kt · same alt, climbing · same alt, climbing through your altitude · 0 s · Clear: move NW ↑ S=0.61
+09-25 13:25:25.087 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:25:28.074 I/Sentry  ( 6695): ALERT[replay] 11:53:45 PDT WARNING PASSING/OTHER sound=passing/full banner=SILENT: ● PASSING · N388KM · E 2,000 ft · 160 kt · same alt, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:25:28.096 I/Sentry  ( 6695): SOUND passing/full level_default
+09-25 13:25:39.082 I/Sentry  ( 6695): ALERT[replay] 11:53:56 PDT CAUTION TRAFFIC/DOWNGRADE sound=- banner=SILENT: ● PASSING · N388KM · NE 4,400 ft · 161 kt · 100 above, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:25:51.087 I/Sentry  ( 6695): ALERT[replay] 11:54:08 PDT ADVISORY TRAFFIC/DOWNGRADE sound=- banner=SILENT: ● PASSING · N388KM · NE 1.2 mi · 163 kt · 200 above, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:26:37.113 I/Sentry  ( 6695): ALERT[replay] 11:54:54 PDT NONE CLEAR/OTHER sound=- banner=CANCEL: ○ CLEAR · N388KM · Outside 3.0 mi ·  S=0.61
+09-25 13:27:14.132 I/Sentry  ( 6695): REPLAY finished
+09-25 13:27:22.140 I/Sentry  ( 6695): Service destroyed (mode=OFF)
+09-25 13:33:47.666 I/Sentry  ( 6695): Service created
+09-25 13:33:47.770 I/Sentry  ( 6695): REPLAY start: Demo encounter: DEMO-1 vs N388KM (SYNTHETIC crossing variant) at 1.0x
+09-25 13:33:47.773 I/Sentry  ( 6695): ALERT[replay] 11:51:50 PDT INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-1 Pilot, this controller's aircraft.
+09-25 13:33:47.779 I/Sentry  ( 6695): Controller GPS listening
+09-25 13:33:47.829 I/Sentry  ( 6695): SOUND bound/full level_default
+09-25 13:34:11.789 I/Sentry  ( 6695): ALERT[replay] 11:52:14 PDT TRACK ALERT TRAFFIC/ESCALATION sound=track/full banner=POPUP: ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · 700 below, climbing · Passing within 1.0 mi in 1 min 19 s · Clear: move NW ↑ S=11.84
+09-25 13:34:11.818 I/Sentry  ( 6695): SOUND track/full level_default · alert latency 0.1 s (TRACK ALERT a479ef)
+09-25 13:34:41.806 I/Sentry  ( 6695): ALERT[replay] 11:52:44 PDT TRACK ALERT TRAFFIC/UPDATE sound=- banner=SILENT: ▲ TRACK · N388KM Cirrus · SW 2.5 mi · 160 kt · 500 below, climbing · Passing within 0.9 mi in 50 s · Clear: move NW ↑ S=7.71
+09-25 13:34:54.813 I/Sentry  ( 6695): ALERT[replay] 11:52:57 PDT COLLISION RISK TRAFFIC/ESCALATION sound=collision/full banner=POPUP: ‼ COLLISION RISK · N388KM · SW 1.9 mi · 155 kt · 400 below, climbing · 400 below, climbing through your altitude · 43 s · Clear: move NW ↑ S=5.92
+09-25 13:34:54.843 I/Sentry  ( 6695): SOUND collision/full level_default · alert latency 0.5 s (COLLISION RISK a479ef)
+09-25 13:34:57.814 I/Sentry  ( 6695): ALERT[replay] 11:53:00 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.8 mi · 155 kt · 400 below, climbing · Closest 2,600 ft in 37 s, 100 below · Clear: move NW ↑ S=5.54
+09-25 13:34:57.835 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:00.817 I/Sentry  ( 6695): ALERT[replay] 11:53:03 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.6 mi · 156 kt · 300 below, climbing · Closest 1,700 ft in 29 s, 100 below · Clear: move NW ↑ S=4.94
+09-25 13:35:00.849 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:03.821 I/Sentry  ( 6695): ALERT[replay] 11:53:06 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.5 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 34 s · Clear: move SE ↑ S=4.61
+09-25 13:35:03.841 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:06.822 I/Sentry  ( 6695): ALERT[replay] 11:53:09 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.4 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=4.24
+09-25 13:35:06.845 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:09.826 I/Sentry  ( 6695): ALERT[replay] 11:53:12 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.3 mi · 157 kt · 300 below, climbing · 300 below, climbing through your altitude · 31 s · Clear: move NW ↑ S=3.92
+09-25 13:35:09.842 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:12.826 I/Sentry  ( 6695): ALERT[replay] 11:53:15 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 1.1 mi · 158 kt · 200 below, climbing · 200 below, climbing through your altitude · 26 s · Clear: move NW ↑ S=3.28
+09-25 13:35:12.844 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:15.826 I/Sentry  ( 6695): ALERT[replay] 11:53:18 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,800 ft · 159 kt · 200 below, climbing · 200 below, climbing through your altitude · 22 s · Clear: move NW ↑ S=2.94
+09-25 13:35:15.841 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:18.827 I/Sentry  ( 6695): ALERT[replay] 11:53:21 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 5,100 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.58
+09-25 13:35:18.842 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:20.829 I/Sentry  ( 6695): ALERT[replay] 11:53:23 PDT COLLISION RISK TFR_ENTRY/OTHER sound=- banner=NONE: Traffic entering TFR 0/0000: SW 4,700 ft · 160 kt · 200 below, climbing S=2.35
+09-25 13:35:21.829 I/Sentry  ( 6695): ALERT[replay] 11:53:24 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SW 4,500 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=2.29
+09-25 13:35:21.844 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:24.832 I/Sentry  ( 6695): ALERT[replay] 11:53:27 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,800 ft · 160 kt · 200 below, climbing · 200 below, climbing through your altitude · 19 s · Clear: move NW ↑ S=1.94
+09-25 13:35:24.848 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:27.835 I/Sentry  ( 6695): ALERT[replay] 11:53:30 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 3,100 ft · 158 kt · 100 below, climbing · 100 below, climbing through your altitude · 12 s · Clear: move NW ↑ S=1.54
+09-25 13:35:27.849 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:30.835 I/Sentry  ( 6695): ALERT[replay] 11:53:33 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 2,400 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=1.21
+09-25 13:35:30.854 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:33.838 I/Sentry  ( 6695): ALERT[replay] 11:53:36 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · S 1,900 ft · 159 kt · 100 below, climbing · 100 below, climbing through your altitude · 9 s · Clear: move NW ↑ S=0.98
+09-25 13:35:33.855 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:36.840 I/Sentry  ( 6695): ALERT[replay] 11:53:39 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · SE 1,200 ft · 159 kt · same alt, climbing · same alt, climbing through your altitude · 3 s · Clear: move NW ↑ S=0.62
+09-25 13:35:36.857 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:39.842 I/Sentry  ( 6695): ALERT[replay] 11:53:42 PDT COLLISION RISK TRAFFIC/REPEAT sound=collision/full banner=SILENT: ‼ COLLISION RISK · N388KM · E 1,500 ft · 160 kt · same alt, climbing · same alt, climbing through your altitude · 0 s · Clear: move NW ↑ S=0.61
+09-25 13:35:39.863 I/Sentry  ( 6695): SOUND collision/full level_default
+09-25 13:35:42.845 I/Sentry  ( 6695): ALERT[replay] 11:53:45 PDT WARNING PASSING/OTHER sound=passing/full banner=SILENT: ● PASSING · N388KM · E 2,000 ft · 160 kt · same alt, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:35:42.874 I/Sentry  ( 6695): SOUND passing/full level_default
+09-25 13:35:53.853 I/Sentry  ( 6695): ALERT[replay] 11:53:56 PDT CAUTION TRAFFIC/DOWNGRADE sound=- banner=SILENT: ● PASSING · N388KM · NE 4,400 ft · 161 kt · 100 above, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:36:05.862 I/Sentry  ( 6695): ALERT[replay] 11:54:08 PDT ADVISORY TRAFFIC/DOWNGRADE sound=- banner=SILENT: ● PASSING · N388KM · NE 1.2 mi · 163 kt · 200 above, climbing · Diverging · closest was 1,200 ft S=0.61
+09-25 13:36:51.884 I/Sentry  ( 6695): ALERT[replay] 11:54:54 PDT NONE CLEAR/OTHER sound=- banner=CANCEL: ○ CLEAR · N388KM · Outside 3.0 mi ·  S=0.61
+09-25 13:37:28.905 I/Sentry  ( 6695): REPLAY finished
+09-25 13:37:36.913 I/Sentry  ( 6695): Service destroyed (mode=OFF)
+9-25 13:14:08.457 I/Sentry  ( 5236): ARMED (live)

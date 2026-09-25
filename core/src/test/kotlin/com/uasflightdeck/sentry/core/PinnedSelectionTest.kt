@@ -122,7 +122,9 @@ class PinnedSelectionTest {
         assertTrue((32..39).all { s.at(it, demo1.at(it)).events.isEmpty() })
         val back = s.at(40, mine.at(40), demo1.at(40))
         assertEquals(SelectionMode.PINNED, back.mode)
-        assertEquals(listOf("Watching Spare 1, this controller's aircraft."), back.events.map { it.text })
+        // 0.4.3: a regain in the same session is one "back" message, not a second "acquired"
+        assertEquals(listOf("Drone position regained · watching Spare 1"), back.events.map { it.text })
+        assertEquals(EventKind.OWNSHIP_REGAINED, back.events.single().kind)
     }
 
     /** Found on the emulator (v0.2): a drone that vanishes from the feed must be held until it is stale, not dropped at once. */

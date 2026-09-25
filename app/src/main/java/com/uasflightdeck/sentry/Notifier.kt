@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.uasflightdeck.sentry.core.BannerRefresh
 import com.uasflightdeck.sentry.core.BannerText
 import com.uasflightdeck.sentry.core.OutputPlanner.BannerAction
 import com.uasflightdeck.sentry.core.Tier
@@ -102,8 +103,11 @@ class Notifier(private val ctx: Context) {
     private val nm = ctx.getSystemService(NotificationManager::class.java)
     private val main = Handler(Looper.getMainLooper())
 
-    /** Banners currently shown: key -> (cancel time, last text). */
-    private class Live(var untilMs: Long, var text: BannerText, var tier: Tier?, val cancel: Runnable)
+    /**
+     * Banners currently shown: key -> (cancel time, last text). [holdUntilMs]: the event that posted it keeps its
+     * title until then (0.4.3, [BannerRefresh]); the per-second refresh never touches it.
+     */
+    private class Live(var untilMs: Long, var text: BannerText, var tier: Tier?, val cancel: Runnable, val holdUntilMs: Long)
     private val live = HashMap<String, Live>()
 
     @Volatile var bannerMs: Long = 5_000
@@ -186,10 +190,10 @@ class Notifier(private val ctx: Context) {
     @Synchronized
     fun refresh(hex: String, id: String, b: BannerText, tier: Tier) {
         val l = live[hex] ?: return
-        if (l.text == b && l.tier == tier) return
-        if (l.text.title != b.title && tier < (l.tier ?: Tier.NONE)) return     // a step down waits for its own event
-        if (l.text.title != b.title) SentryBus.log("BANNER retitle $id: ${l.text.title} -> ${b.title}")
-        l.text = b
+        val now = System.currentTimeMillis()
+        if (BannerRefresh.decide(l.text, l.tier, l.holdUntilMs, b, tier, now) == BannerRefresh.Action.KEEP) return
+        if (l.text.title != b.title) SentryBus.log("BANNER retitle $id: ${l.text.title} -> ${b.title} (event banner shown ${now - (l.holdUntilMs - bannerMs)} ms)")
+        l.text = b; l.tier = tier
         notify(trafficId(hex), trafficNotification(hex, id, b, tier, alert = false, silent = false))
     }
 
@@ -206,7 +210,8 @@ class Notifier(private val ctx: Context) {
     private fun restartTimer(key: String, b: BannerText, tier: Tier?, prev: Live?) {
         prev?.let { main.removeCallbacks(it.cancel) }
         val r = Runnable { synchronized(this) { live.remove(key) }; runCatching { nm.cancel(if (key.startsWith("house:")) houseId(key) else trafficId(key)) } }
-        live[key] = Live(System.currentTimeMillis() + bannerMs, b, tier, r)
+        val now = System.currentTimeMillis()
+        live[key] = Live(now + bannerMs, b, tier, r, holdUntilMs = now + bannerMs)
         main.postDelayed(r, bannerMs)
     }
 

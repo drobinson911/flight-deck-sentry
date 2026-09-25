@@ -285,10 +285,19 @@ class AlertEngine(
                 warnPred = wp <= 0
                 // COLLISION RISK: predicted within 500 ft / 300 ft within 60 s (unknown altitude = inside, fail wide),
                 // or his vertical rate carries him THROUGH the drone's altitude while inside 0.5 nm in the next 60 s.
-                val c1 = if (!pred.converging) 1.0 else maxOf((pred.tCpaSec - cfg.collisionSec) / cfg.collisionSec,
-                    (pred.missFt - cfg.collisionMissFt) / cfg.collisionMissFt,
-                    pred.dvAtCpaFt?.let { (abs(it) - cfg.collisionVertFt) / cfg.collisionVertFt } ?: -1.0)
-                val c2 = if (pred.crossingInSec != null) -1.0 else 1.0
+                // 0.4.3: once COLLISION RISK is up it gets the same hysteresis as the other predicted tiers (+10 s,
+                // +0.2 nm window / miss, +200 ft vertical): the crossing test flickered with the feed's altitude steps
+                // (crossing replay 11:53:00-05, one WARNING tick at 11:53:05 after the 5 s hold ran out).
+                val colUp = held >= Tier.COLLISION
+                val colSec = horizon(cfg.collisionSec, Tier.COLLISION)
+                val colMissFt = cfg.collisionMissFt + if (colUp) cfg.ringHysteresisNm * Units.FT_PER_NM else 0.0
+                val colVertFt = cfg.collisionVertFt + if (colUp) cfg.bandHysteresisFt else 0.0
+                val c1 = if (!pred.converging) 1.0 else maxOf((pred.tCpaSec - colSec) / colSec,
+                    (pred.missFt - colMissFt) / colMissFt,
+                    pred.dvAtCpaFt?.let { (abs(it) - colVertFt) / colVertFt } ?: -1.0)
+                val crossing = pred.crossingInSec ?: if (colUp && dv != null) Prediction.crossingTime(rel, vRel ?: EN(0.0, 0.0), dv, vsRel,
+                    Units.nmToM(ring(Tier.COLLISION, cfg.warningNm)), colSec) else null
+                val c2 = if (crossing != null) -1.0 else 1.0
                 margins[Tier.COLLISION] = min(c1, c2)
                 collision = margins.getValue(Tier.COLLISION) <= 0
             }
