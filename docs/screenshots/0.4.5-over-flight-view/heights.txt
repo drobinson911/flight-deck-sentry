@@ -1,0 +1,22 @@
+# Sentry notification heights on rc-plus-29 (1920x1200 @ 400 dpi, density 2.5: dp = px / 2.5)
+# Source: dumpsys activity service com.android.systemui/.SystemUIService, the Sentry rows' contentHeight.
+# visibleType 2 = heads-up, 1 = expanded (pulled down), 0 = collapsed. Non-Sentry rows (Android System) omitted.
+
+## 17-lost-headsup.png
+  id  52475 housekeeping card  heads-up  131 px = 52.4 dp
+  id      1 status             collapsed 131 px = 52.4 dp
+## 18-regain-headsup.png
+  id  43688 housekeeping card  heads-up  131 px = 52.4 dp
+  id  52475 housekeeping card  collapsed 131 px = 52.4 dp
+  id      1 status             collapsed 131 px = 52.4 dp
+## 17b-lost-shade.png
+  id  52475 housekeeping card  expanded  147 px = 58.8 dp
+  id      1 status             collapsed 131 px = 52.4 dp
+## 19-status-armed-shade.png
+  id      1 status             expanded  270 px = 108.0 dp
+## 23-warning-pass-1-headsup-115257.png
+  id  16734 traffic banner     heads-up  239 px = 95.6 dp
+  id      1 status             collapsed 131 px = 52.4 dp
+## 24/25 warning pass shade (dump after 11:53:10)
+  id  16734 traffic banner     expanded  377 px = 150.8 dp
+  id      1 status             collapsed 131 px = 52.4 dp

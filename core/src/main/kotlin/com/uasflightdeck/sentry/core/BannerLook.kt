@@ -30,6 +30,16 @@ object BannerLook {
         PASSING(0xFFB4BEC8.toInt(), 0xFF6B7680.toInt()),    // grey: passing / clear
     }
 
+    /**
+     * 0.4.5: the tone of every NON-traffic notification (housekeeping pop-ups, the status notification, the update
+     * notice), drawn on the same dark card: grey-blue informational, amber something lost, green something back.
+     */
+    enum class Tone(val argb: Int, val stripe: Int) {
+        INFO(0xFFA8C8EA.toInt(), 0xFFA8C8EA.toInt()),      // grey-blue (= TRACK / ADVISORY)
+        LOST(0xFFFFB547.toInt(), 0xFFFFB547.toInt()),      // amber (= WARNING)
+        REGAINED(0xFF7EE08A.toInt(), 0xFF7EE08A.toInt()),  // green
+    }
+
     /** PASSING ("●") and CLEAR ("○") are grey whatever the tier; otherwise the tier decides. */
     fun level(tier: Tier?, title: String): Level = when {
         title.startsWith("●") || title.startsWith("○") -> Level.PASSING

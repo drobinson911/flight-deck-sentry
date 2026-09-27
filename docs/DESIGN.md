@@ -110,13 +110,30 @@ closing) re-triggers.
   0.4.2/0.4.3 body text was black on dark. Heads-up = two rows (level + who + where / closure + hint) + the button
   row: 95.6 dp (0.4.3's decorated three-row heads-up was 132.8 dp); 52.4 dp without buttons (PASSING, COLLISION RISK).
   Expanded = the four lines + buttons. Measured per level in `docs/screenshots/0.4.4/heights.txt`.
+- **The "Clear: move …" hint (0.4.5).** `Banner.escapeBearing`: perpendicular to his track, on the side of his track
+  the drone will be on at the closest approach (miss vector `rel + vRel·tCPA`, relative motion; not converging: the
+  offset now); centred (< 150 ft): away from his turn (> 0.5 °/s), else right. `HintHold` (one per aircraft, in the
+  engine while the aircraft has a banner, ADVISORY and up): the shown 8-point direction changes only when the new one
+  has been computed on every tick for >= 5 s, or his track has changed > 45° since the shown hint was last confirmed
+  (then at once); same word = the bearing follows; no track = no hint, hold reset. Why: in the demo replay at 11:53:06
+  a new fix turned N388KM's derived track (no track in the feed) 2.5° so its line passed 67 ft from the drone, the
+  side fell to the turn fallback and the hint read "move SE" for one tick between "move NW"s, while the CPA (0.26 nm,
+  36 s ahead) was 1,558 ft on his left (NW) all along: the drone itself was flying W at ~30 kt. `HintStabilityTest`.
+- **Every other notification is on the same card (0.4.5).** Housekeeping pop-ups (internet, bound aircraft lost /
+  back / acquired, restart, sounds on, pre-flight), the status notification and the update notice use
+  `Notifier.infoCard`: `banner_info.xml` (heads-up and collapsed: title + one line) and `banner_info_big.xml`
+  (pulled down: full body + our own buttons, e.g. Disarm / Open Sentry). Title colour by `Housekeeping.tone`: amber
+  something lost (drone position, internet, a source, controller GPS, a failed pre-flight), green it is back (or the
+  pre-flight passed), grey-blue information. `BannerColorsTest` scans the sources for every notification builder and
+  fails on any system style or a builder without all three custom views.
 - In-place updates use `setOnlyAlertOnce(true)` on the HIGH channel: SystemUI updates a showing heads-up without
   re-alerting. A cadence repeat for a banner that has already timed out is re-posted with `setSilent(true)` (the
   group-alert trick), which never pops up. An escalation re-posts without only-alert-once, which pops it up again.
 - Timers: each popup and each cadence refresh restarts the banner-duration timer; the per-second countdown refresh
   does not and never re-posts a cancelled banner. CLEAR cancels at once.
 - Banner colours (0.4.4, on the dark card): collision risk red #FF8A80 (red edge stripe), warning amber #FFB547, caution
-  yellow #FFE45C, track / advisory grey-blue #A8C8EA, passing / clear grey #B4BEC8, body text #F2F5F8.
+  yellow #FFE45C, track / advisory grey-blue #A8C8EA, passing / clear grey #B4BEC8, body text #F2F5F8. Non-traffic
+  cards (0.4.5): info grey-blue #A8C8EA, lost amber #FFB547, regained green #7EE08A.
 - Actions are `PendingIntent.getForegroundService` to the service (never an activity). The status notification has
   no content intent: **Open Sentry** is the only way in.
 

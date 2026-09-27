@@ -62,6 +62,8 @@ object Geo {
     }
 
     fun normDeg(d: Double): Double { val r = d % 360.0; return if (r < 0) r + 360.0 else r }
+    /** Smallest absolute difference between two bearings, 0..180. */
+    fun angleDiff(a: Double, b: Double): Double { val d = normDeg(a - b); return if (d > 180.0) 360.0 - d else d }
 
     /**
      * Local tangent-plane (equirectangular) offset of [p] from [origin], metres.

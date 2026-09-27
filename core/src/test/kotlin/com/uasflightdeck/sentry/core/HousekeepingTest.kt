@@ -43,6 +43,20 @@ class HousekeepingTest {
     }
 }
 
+/** 0.4.5: the dark-card tone of each housekeeping pop-up: amber lost, green back, grey-blue information. */
+class HousekeepingToneTest {
+    @Test fun lostIsAmberRegainedIsGreenRestIsInfo() {
+        assertEquals(BannerLook.Tone.LOST, Housekeeping.tone(EventKind.OWNSHIP_LOST))
+        assertEquals(BannerLook.Tone.LOST, Housekeeping.tone(EventKind.INTERNET_LOST))
+        assertEquals(BannerLook.Tone.REGAINED, Housekeeping.tone(EventKind.OWNSHIP_REGAINED))
+        assertEquals(BannerLook.Tone.REGAINED, Housekeeping.tone(EventKind.INTERNET_REGAINED))
+        assertEquals(BannerLook.Tone.REGAINED, Housekeeping.tone(EventKind.PREFLIGHT, preflightOk = true))
+        assertEquals(BannerLook.Tone.LOST, Housekeeping.tone(EventKind.PREFLIGHT, preflightOk = false))
+        for (k in listOf(EventKind.SELECTION, EventKind.RESTARTED, EventKind.SOUNDS_ON, EventKind.SYSTEM))
+            assertEquals(k.name, BannerLook.Tone.INFO, Housekeeping.tone(k))
+    }
+}
+
 class PluralTest {
     @Test fun statusLineCountIsPluralised() {
         assertEquals("1 target", SystemText.count(1, "target"))

@@ -115,21 +115,40 @@ object Banner {
         return "Clear: move ${Geo.cardinalAbbrev(b)}$arrow"
     }
 
-    /** The escape bearing, pure: see [hint]. [rel] = aircraft minus drone (m); [turnDegPerSec] > 0 = turning right. */
-    fun escapeBearing(trackDeg: Double, rel: EN, turnDegPerSec: Double?, centredFt: Double = 150.0): Double {
-        // Drone relative to the aircraft = -rel. Cross product of his heading unit vector and that offset:
-        // negative = the drone is to his RIGHT (east of a northbound track).
-        val h = EN(kotlin.math.sin(Math.toRadians(trackDeg)), kotlin.math.cos(Math.toRadians(trackDeg)))
-        val d = EN(-rel.e, -rel.n)
-        val cross = h.e * d.n - h.n * d.e
-        val lateralFt = abs(cross) / Units.M_PER_FT
+    /**
+     * The escape bearing, pure: see [hint]. [rel] = aircraft minus drone (m) now; [turnDegPerSec] > 0 = turning right.
+     *
+     * 0.4.5: the side is decided at the CLOSEST APPROACH, in the relative frame: [vRel] (aircraft minus drone velocity,
+     * m/s) and [tCpaSec] give the miss vector m = rel + vRel·t, and the drone goes to the side of his track it will
+     * be on when he passes. 0.4.0-0.4.4 used the drone's offset from his track line NOW, which ignores the drone's own
+     * motion: in the demo replay at 11:53:06 the drone (itself moving W at ~30 kt) sat 67 ft off his derived track line,
+     * inside the 150 ft "centred" band, so the side fell to the turn-rate fallback and the hint flipped NW -> SE -> NW
+     * for one tick while the CPA (0.26 nm, 36 s ahead) was clearly on the NW side all along. Without [vRel] (or not
+     * converging) the current offset is used, as before.
+     */
+    fun escapeBearing(trackDeg: Double, rel: EN, turnDegPerSec: Double?, centredFt: Double = 150.0,
+                      vRel: EN? = null, tCpaSec: Double? = null): Double {
+        val lateralFt = sideOffsetFt(trackDeg, rel, vRel, tCpaSec)
         val right = when {
-            lateralFt >= centredFt -> cross < 0
+            abs(lateralFt) >= centredFt -> lateralFt > 0
             turnDegPerSec != null && turnDegPerSec > 0.5 -> false        // he turns right: go left
             turnDegPerSec != null && turnDegPerSec < -0.5 -> true        // he turns left: go right
             else -> true
         }
         return Geo.normDeg(trackDeg + if (right) 90.0 else -90.0)
+    }
+
+    /**
+     * Where the drone is across HIS track (ft, + = on his right, - = his left), at the closest approach when [vRel]
+     * and a positive [tCpaSec] are given, else now.
+     */
+    fun sideOffsetFt(trackDeg: Double, rel: EN, vRel: EN? = null, tCpaSec: Double? = null): Double {
+        val m = if (vRel != null && tCpaSec != null && tCpaSec > 0) rel + vRel * tCpaSec else rel
+        // Drone relative to the aircraft = -m. Cross product of his heading unit vector and that offset:
+        // negative = the drone is to his RIGHT (east of a northbound track).
+        val h = EN(kotlin.math.sin(Math.toRadians(trackDeg)), kotlin.math.cos(Math.toRadians(trackDeg)))
+        val cross = h.e * (-m.n) - h.n * (-m.e)
+        return -cross / Units.M_PER_FT
     }
 
     /** +1 = ↑, -1 = ↓, 0 = no arrow. [dvFt] aircraft minus drone now; [vsFpm] HIS vertical rate. */
@@ -217,5 +236,40 @@ object BannerRefresh {
             if (nowMs < holdUntilMs) return Action.KEEP                         // the event's phrasing is shown first
         }
         return Action.UPDATE
+    }
+}
+
+/**
+ * 0.4.5: hysteresis on the "Clear: move …" hint, one per aircraft (owner: the hint must not flip mid-pass).
+ *
+ * The first hint shows at once. After that the SHOWN direction (its 8-point word, "NW") changes only when
+ *  - the new direction has been the computed one on every tick for at least [holdMs] (5 s), or
+ *  - his track has changed by more than [turnDeg] (45°) since the shown hint was last confirmed (a real turn: the
+ *    new side is shown at once).
+ * While the word is unchanged the bearing follows the computation. No track (no hint) resets it.
+ */
+class HintHold(val holdMs: Long = 5_000, val turnDeg: Double = 45.0) {
+    private var shownDeg: Double? = null
+    private var shownTrackDeg: Double? = null
+    private var candDeg: Double? = null
+    private var candSinceMs = 0L
+
+    /** The bearing to show this tick, given the freshly computed [candidateDeg] and his [trackDeg]. */
+    fun step(nowMs: Long, candidateDeg: Double?, trackDeg: Double?): Double? {
+        if (candidateDeg == null) { shownDeg = null; shownTrackDeg = null; candDeg = null; return null }
+        val shown = shownDeg
+        if (shown == null || Geo.cardinalAbbrev(candidateDeg) == Geo.cardinalAbbrev(shown)) return adopt(candidateDeg, trackDeg)
+        val ref = shownTrackDeg
+        if (trackDeg != null && ref != null && Geo.angleDiff(trackDeg, ref) > turnDeg) return adopt(candidateDeg, trackDeg)
+        val c = candDeg
+        if (c == null || Geo.cardinalAbbrev(c) != Geo.cardinalAbbrev(candidateDeg)) { candDeg = candidateDeg; candSinceMs = nowMs }
+        else candDeg = candidateDeg
+        if (nowMs - candSinceMs >= holdMs) return adopt(candidateDeg, trackDeg)
+        return shown
+    }
+
+    private fun adopt(deg: Double, trackDeg: Double?): Double {
+        shownDeg = deg; shownTrackDeg = trackDeg ?: shownTrackDeg; candDeg = null
+        return deg
     }
 }

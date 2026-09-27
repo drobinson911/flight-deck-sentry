@@ -8,7 +8,8 @@ import org.junit.Test
 /** 0.4.4: banners readable on any notification surface (own dark card, explicit colours) and a 2-row heads-up. */
 class BannerLookTest {
     @Test fun everyTextColourIsAtLeast7to1OnTheCard() {
-        val inks = BannerLook.Level.values().map { it.name to it.argb } + ("INK" to BannerLook.INK)
+        val inks = BannerLook.Level.values().map { it.name to it.argb } + BannerLook.Tone.values().map { "Tone." + it.name to it.argb } +
+            ("INK" to BannerLook.INK)
         for ((name, c) in inks) {
             val r = BannerLook.contrast(c, BannerLook.BG)
             assertTrue("$name is ${"%.2f".format(r)}:1 on the card", r >= 7.0)
@@ -17,7 +18,8 @@ class BannerLookTest {
     }
 
     @Test fun cardAndTextAreOpaque() {
-        (listOf(BannerLook.BG, BannerLook.INK, BannerLook.BUTTON) + BannerLook.Level.values().flatMap { listOf(it.argb, it.stripe) })
+        (listOf(BannerLook.BG, BannerLook.INK, BannerLook.BUTTON) + BannerLook.Level.values().flatMap { listOf(it.argb, it.stripe) } +
+            BannerLook.Tone.values().flatMap { listOf(it.argb, it.stripe) })
             .forEach { assertEquals(0xFF, (it ushr 24) and 0xFF) }
     }
 

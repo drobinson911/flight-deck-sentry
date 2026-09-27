@@ -693,7 +693,8 @@ class SentryService : Service() {
                 notifier.traffic(hex, id, ev.banner, ev.tier, o.banner)
             } else if (o.banner == OutputPlanner.BannerAction.POPUP) {
                 val (title, text) = housekeepingText(ev)
-                notifier.housekeeping(ev.kind.name, title, text)
+                val preflightOk = SentryBus.preflight.value?.second?.all { it.ok } ?: true
+                notifier.housekeeping(ev.kind.name, title, text, com.uasflightdeck.sentry.core.Housekeeping.tone(ev.kind, preflightOk))
             }
         }
     }

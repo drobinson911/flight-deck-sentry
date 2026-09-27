@@ -11,10 +11,9 @@
     <color name="replay">#B388FF</color>
     <color name="icon_bg">#0E2A3A</color>
     <!-- 0.4.4 banner (notification) card: explicit colours, never the system notification theme. MUST equal the
-         constants in core BannerLook (BannerColorsTest checks it). Level colours come from BannerLook.Level. -->
+         constants in core BannerLook (BannerColorsTest checks it). Level colours come from BannerLook.Level, the
+         non-traffic card tones (0.4.5) from BannerLook.Tone. -->
     <color name="banner_bg">#10161D</color>
     <color name="banner_ink">#F2F5F8</color>
     <color name="banner_button">#26313D</color>
-    <!-- Accent (small icon / app name) of the housekeeping pop-ups, which use the system template. -->
-    <color name="banner_blue">#0277BD</color>
 </resources>

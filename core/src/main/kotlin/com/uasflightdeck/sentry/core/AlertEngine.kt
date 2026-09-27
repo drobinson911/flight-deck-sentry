@@ -100,6 +100,8 @@ class AlertEngine(
         var prevTrackDeg: Double? = null
         var prevTrackMs: Long = 0
         var turnDegPerSec: Double? = null
+        /** 0.4.5: the "Clear: move …" hint only changes after 5 s or a > 45° turn. */
+        val hint = HintHold()
     }
 
     private enum class OwnState { UNKNOWN, OK, LOST }
@@ -332,7 +334,11 @@ class AlertEngine(
                 if (horiz && vol && inZoneBand(altMsl, z, groundFt)) inZones += z
             }
 
-            val escape = trk?.let { Banner.escapeBearing(it, rel, st.turnDegPerSec) }
+            // 0.4.5: side from the closest-approach geometry (relative motion), then held against flips (HintHold)
+            // while the aircraft has a banner; below ADVISORY the hold restarts, so the first hint shown is fresh.
+            val rawEscape = trk?.let { Banner.escapeBearing(it, rel, st.turnDegPerSec, vRel = vRel,
+                tCpaSec = pred.tCpaSec.takeIf { pred.converging }) }
+            val escape = if (tier >= Tier.ADVISORY) st.hint.step(nowMs, rawEscape, trk) else { st.hint.step(nowMs, null, null); rawEscape }
             val view = TargetView(
                 hex = cur.hex, displayId = cur.displayId, distNm = distNm, bearingDeg = bearing,
                 dvFt = dv, altEstimated = estimated, trend = trend, tier = tier, prediction = pred,

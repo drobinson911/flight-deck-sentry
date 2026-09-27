@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.uasflightdeck.sentry.core.BannerLook
 import com.uasflightdeck.sentry.core.BannerRefresh
 import com.uasflightdeck.sentry.core.BannerText
@@ -29,6 +28,9 @@ import com.uasflightdeck.sentry.core.Tier
  *  - "housekeeping" (HIGH): internet lost / regained, bound aircraft acquired / lost, pre-flight, sounds on.
  *    Tap = dismiss.
  *  - "status" (LOW): the foreground-service notification with Disarm and Open Sentry (the only way into the app).
+ *  - "updates" (LOW): "Sentry x.y.z available".
+ *    0.4.5: housekeeping, status and update use [infoCard]: the same opaque dark card, explicit colours (grey-blue
+ *    info, amber lost, green regained); NO notification here uses the system template any more.
  *  - every banner cancels after the banner duration (traffic: restarted by each cadence refresh), and a traffic
  *    banner is cancelled at once when the aircraft clears.
  */
@@ -65,16 +67,61 @@ class Notifier(private val ctx: Context) {
 
         /** Low priority, silent: "Sentry 0.4.1 available". Tapping opens Sentry, where the pilot taps to install. */
         fun updateAvailable(ctx: Context, version: String) {
-            val n = NotificationCompat.Builder(ctx, CH_UPDATES)
-                .setSmallIcon(R.drawable.ic_stat_sentry)
-                .setContentTitle("Sentry $version available")
-                .setContentText("Tap to open Sentry, then tap the update banner to install.")
+            val title = "Sentry $version available"
+            val text = "Tap to open Sentry, then tap the update banner to install."
+            val n = infoCard(NotificationCompat.Builder(ctx, CH_UPDATES), ctx, BannerLook.Tone.INFO, title, text)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
                 .setContentIntent(openApp(ctx))
                 .build()
             runCatching { ctx.getSystemService(NotificationManager::class.java).notify(ID_UPDATE, n) }
+        }
+
+        /** A button on the expanded non-traffic card. */
+        class CardAction(val label: String, val intent: PendingIntent)
+
+        /**
+         * 0.4.5: the non-traffic card (housekeeping pop-ups, status, update notice) on the same opaque dark card as the
+         * traffic banners, every colour explicit: [banner_info] for the heads-up and the collapsed form (title + one
+         * line), [banner_info_big] pulled down (full body + our own buttons). Title / text / actions are still set on
+         * the builder for accessibility and the lock screen; no system template is drawn.
+         */
+        fun infoCard(nb: NotificationCompat.Builder, ctx: Context, tone: BannerLook.Tone, title: String, text: String,
+                     actions: List<CardAction> = emptyList()): NotificationCompat.Builder {
+            fun rv(layout: Int, body: String): android.widget.RemoteViews = android.widget.RemoteViews(ctx.packageName, layout).apply {
+                setInt(R.id.bStripe, "setBackgroundColor", tone.stripe)
+                setTextViewText(R.id.bTitle, title)
+                setTextColor(R.id.bTitle, tone.argb)
+                setTextViewText(R.id.bLine2, body)
+                setTextColor(R.id.bLine2, BannerLook.INK)
+                setViewVisibility(R.id.bLine2, if (body.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+            }
+            // collapsed / heads-up: the first line only (the pre-flight list is several lines)
+            val oneLine = text.lineSequence().firstOrNull().orEmpty()
+            val big = rv(R.layout.banner_info_big, text)
+            if (actions.isNotEmpty()) {
+                big.setViewVisibility(R.id.bActions, android.view.View.VISIBLE)
+                val ids = intArrayOf(R.id.bAct1, R.id.bAct2)
+                ids.forEachIndexed { i, id ->
+                    val a = actions.getOrNull(i)
+                    big.setViewVisibility(id, if (a == null) android.view.View.GONE else android.view.View.VISIBLE)
+                    if (a != null) {
+                        big.setTextViewText(id, a.label); big.setTextColor(id, BannerLook.INK)
+                        big.setOnClickPendingIntent(id, a.intent)
+                    }
+                }
+            }
+            nb.setSmallIcon(R.drawable.ic_stat_sentry)
+                .setColor(tone.stripe)
+                .setContentTitle(title)
+                .setContentText(oneLine)
+                .setCustomContentView(rv(R.layout.banner_info, oneLine))
+                .setCustomBigContentView(big)
+                .setCustomHeadsUpContentView(rv(R.layout.banner_info, oneLine))
+                .setShowWhen(false)
+            actions.forEach { nb.addAction(0, it.label, it.intent) }
+            return nb
         }
 
         fun openApp(ctx: Context): PendingIntent = PendingIntent.getActivity(
@@ -88,17 +135,13 @@ class Notifier(private val ctx: Context) {
         }
 
         fun status(ctx: Context, title: String, text: String): Notification =
-            NotificationCompat.Builder(ctx, CH_STATUS)
-                .setSmallIcon(R.drawable.ic_stat_sentry)
-                .setContentTitle(title)
-                .setContentText(text)
+            // No body tap: "Open Sentry" is the only way into the app from here.
+            infoCard(NotificationCompat.Builder(ctx, CH_STATUS), ctx, BannerLook.Tone.INFO, title, text, listOf(
+                CardAction("Disarm", serviceAction(ctx, SentryService.ACTION_DISARM, 9001)),
+                CardAction("Open Sentry", openApp(ctx))))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setShowWhen(false)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                // No body tap: "Open Sentry" is the only way into the app from here.
-                .addAction(0, "Disarm", serviceAction(ctx, SentryService.ACTION_DISARM, 9001))
-                .addAction(0, "Open Sentry", openApp(ctx))
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
     }
@@ -248,21 +291,16 @@ class Notifier(private val ctx: Context) {
         main.postDelayed(r, bannerMs)
     }
 
-    /** Housekeeping heads-up: internet, bound aircraft, pre-flight, sounds on. Tap = dismiss. */
+    /** Housekeeping heads-up: internet, bound aircraft, pre-flight, sounds on. Tap = dismiss. 0.4.5: our dark card, [tone]. */
     @Synchronized
-    fun housekeeping(kind: String, title: String, text: String) {
+    fun housekeeping(kind: String, title: String, text: String, tone: BannerLook.Tone = BannerLook.Tone.INFO) {
         val key = "house:$kind"
         val id = houseId(key)
-        val n = NotificationCompat.Builder(ctx, CH_HOUSE)
-            .setSmallIcon(R.drawable.ic_stat_sentry)
-            .setColor(ContextCompat.getColor(ctx, R.color.banner_blue))
-            .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+        val n = infoCard(NotificationCompat.Builder(ctx, CH_HOUSE), ctx, tone, title, text)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setShowWhen(false)
             .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(serviceAction(ctx, SentryService.ACTION_DISMISS, id) { it.putExtra("nid", id) })
             .build()
         notify(id, n)

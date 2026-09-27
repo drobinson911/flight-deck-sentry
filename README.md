@@ -149,9 +149,12 @@ before closest approach, and no missed true conflict. The owner's first plan (18
   ```
 
   "mi" is the pilot's miles, i.e. **nautical** miles (as ATC says "traffic, 3 miles"); under 1 mi distances are in
-  feet. The hint is perpendicular to *his* track on the side the drone is already offset to (centred: away from his
-  turn, else right), with ↑ / ↓ only when he is changing altitude toward the drone (below and climbing / crossing →
-  ↑; above and descending → ↓). It never says more than "Clear:". The heads-up (0.4.4) is compact: row 1 = level + who + where,
+  feet. The hint is perpendicular to *his* track on the side of it the drone will be on at the **closest approach**
+  (relative motion, so the drone's own movement counts; 0.4.5, before it was the side it was on *now*), centred
+  (< 150 ft): away from his turn, else right; with ↑ / ↓ only when he is changing altitude toward the drone (below and
+  climbing / crossing → ↑; above and descending → ↓). **Hysteresis (0.4.5):** once shown, the direction changes only
+  when the new one has been computed on every tick for 5 s, or his track has turned more than 45° (then at once); the
+  first hint for an aircraft is always fresh. It never says more than "Clear:". The heads-up (0.4.4) is compact: row 1 = level + who + where,
   row 2 = the prediction with the hint on the right, then the buttons (about 96 dp in all); expanded, each line is its
   own. Every banner is its own dark card with explicit colours, readable whatever the system theme: collision risk
   red, warning amber, caution yellow, track / advisory grey-blue, passing / clear grey, text near-white. The countdown updates every second in
@@ -389,7 +392,7 @@ The replay drone's serial `1581F7K3C251F00C9B34` is **synthetic** (the recorded 
 ## Build & test
 
 ```
-./gradlew testDebugUnitTest   # :core:test (189) + app tests (17): prediction, tiers, cadence, mutes, banner text + hint,
+./gradlew testDebugUnitTest   # :core:test (215) + app tests (24): prediction, tiers, cadence, mutes, banner text + hint,
                               # PASSING hold + turn-back, resources (/proc parsing, averaging, battery, texts),
                               # restart / boot policy, share-log formatter + redaction, durations in words,
                               # outputs (sound fallback, vibration, one sound per tick), connectivity, poll rates,
