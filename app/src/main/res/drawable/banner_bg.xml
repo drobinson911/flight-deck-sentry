@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 0.4.4: every traffic banner paints its own opaque dark card (BannerLook.BG); nothing depends on the system's
+     notification background, which is dark on the RC Plus while the system is not in night mode. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/banner_bg" />
+    <corners android:radius="8dp" />
+</shape>

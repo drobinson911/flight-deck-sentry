@@ -102,16 +102,21 @@ closing) re-triggers.
 
 ### Banners: what Android 10 actually does
 
-- `BigTextStyle` in a **heads-up** collapses newlines into spaces (seen on the emulator), so the four lines are a
-  custom `RemoteViews` layout with `DecoratedCustomViewStyle` (the system adds header and actions). A decorated
-  heads-up gets ≈58 dp of content with the action row, so the heads-up has three rows (title / where / prediction +
-  hint right-aligned); expanded, four. COLLISION RISK (no actions) has the room anyway.
+- `BigTextStyle` in a **heads-up** collapses newlines into spaces (seen on the emulator), so the banner is custom
+  `RemoteViews`. Since 0.4.4 they are **fully custom** (no `DecoratedCustomViewStyle`): our own opaque dark card
+  (#10161D), our own buttons (Got it / Ignore / Quiet), every text colour explicit (`core/BannerLook`, contrast >= 7:1,
+  `BannerLookTest` / `BannerColorsTest`). Reason: the platform notification text appearance is black (#de000000)
+  unless the *system* is in night mode, and the RC Plus draws a dark heads-up without being in night mode, so the
+  0.4.2/0.4.3 body text was black on dark. Heads-up = two rows (level + who + where / closure + hint) + the button
+  row: 95.6 dp (0.4.3's decorated three-row heads-up was 132.8 dp); 52.4 dp without buttons (PASSING, COLLISION RISK).
+  Expanded = the four lines + buttons. Measured per level in `docs/screenshots/0.4.4/heights.txt`.
 - In-place updates use `setOnlyAlertOnce(true)` on the HIGH channel: SystemUI updates a showing heads-up without
   re-alerting. A cadence repeat for a banner that has already timed out is re-posted with `setSilent(true)` (the
   group-alert trick), which never pops up. An escalation re-posts without only-alert-once, which pops it up again.
 - Timers: each popup and each cadence refresh restarts the banner-duration timer; the per-second countdown refresh
   does not and never re-posts a cancelled banner. CLEAR cancels at once.
-- Banner colours are darker variants (amber #B26A00, red #D32F2F, grey) readable on the light notification background.
+- Banner colours (0.4.4, on the dark card): collision risk red #FF8A80 (red edge stripe), warning amber #FFB547, caution
+  yellow #FFE45C, track / advisory grey-blue #A8C8EA, passing / clear grey #B4BEC8, body text #F2F5F8.
 - Actions are `PendingIntent.getForegroundService` to the service (never an activity). The status notification has
   no content intent: **Open Sentry** is the only way in.
 

@@ -1,0 +1,54 @@
+# mock worker, light theme
+09-27 15:08:59.093 I/Sentry  ( 9004): Service created
+09-27 15:08:59.130 I/Sentry  ( 9004): TFRs: loaded 1 from disk cache
+09-27 15:08:59.146 I/Sentry  ( 9004): ARMED (live)
+09-27 15:08:59.146 I/Sentry  ( 9004): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-27 15:08:59.153 I/Sentry  ( 9004): ALERT[live] 15:08:59 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-27 15:08:59.156 I/Sentry  ( 9004): Selection: bound to 1581DEMO000000000007
+09-27 15:08:59.165 I/Sentry  ( 9004): Controller GPS listening
+09-27 15:09:00.153 I/Sentry  ( 9004): ALERT[live] 15:09:00 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-27 15:09:00.189 I/Sentry  ( 9004): SOUND bound/full level_default
+09-27 15:09:13.164 I/Sentry  ( 9004): ALERT[live] 15:09:13 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-27 15:09:13.192 I/Sentry  ( 9004): SOUND advisory/short level_default · alert latency 0.2 s (ADVISORY a00001)
+09-27 15:09:27.170 I/Sentry  ( 9004): ALERT[live] 15:09:27 CAUTION TRAFFIC/ESCALATION sound=caution/full banner=POPUP: ◆ CAUTION · DEMO22 · SW 4,900 ft · 0 kt · ≈700 above, level · Not closing S=2.81
+09-27 15:09:27.191 I/Sentry  ( 9004): SOUND caution/full level_default · alert latency 0.1 s (CAUTION a00001)
+09-27 15:09:41.190 I/Sentry  ( 9004): ALERT[live] 15:09:41 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO33 Helicopter · E 1.3 mi · 0 kt · ≈700 above, level · Not closing S=4.20
+09-27 15:09:41.200 I/Sentry  ( 9004): ALERT[live] 15:09:41 INFO TRACK_LOST/OTHER sound=- banner=CANCEL: ○ CLEAR · DEMO22 · Track lost · 
+09-27 15:09:41.212 I/Sentry  ( 9004): SOUND advisory/short level_default
+09-27 15:09:53.199 I/Sentry  ( 9004): ALERT[live] 15:09:53 ADVISORY TFR_ENTRY/OTHER sound=zone/full banner=POPUP: ▣ ENTERING TFR 9/9999 · DEMO33 · E 1.8 mi · 0 kt · ≈700 above, level · Not closing · Clear: move W S=4.20
+09-27 15:09:53.220 I/Sentry  ( 9004): SOUND zone/full level_default
+09-27 15:10:05.206 I/Sentry  ( 9004): ALERT[live] 15:10:05 INFO TRACK_LOST/OTHER sound=- banner=CANCEL: ○ CLEAR · DEMO33 · Track lost · 
+09-27 15:10:06.296 I/Sentry  ( 9004): DISARMED
+# mock worker, dark theme
+09-27 15:07:23.597 I/Sentry  ( 8728): Service created
+09-27 15:07:23.625 I/Sentry  ( 8728): ARMED (live)
+09-27 15:07:23.626 I/Sentry  ( 8728): Resources: measuring every 10 s (4 cores, CLK_TCK 100)
+09-27 15:07:23.630 I/Sentry  ( 8728): ALERT[live] 15:07:23 INFO SYSTEM/OTHER sound=- banner=NONE: Sentry armed
+09-27 15:07:23.634 I/Sentry  ( 8728): Selection: bound to 1581DEMO000000000007
+09-27 15:07:23.638 I/Sentry  ( 8728): Controller GPS listening
+09-27 15:07:24.632 I/Sentry  ( 8728): ALERT[live] 15:07:24 INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-7, this controller's aircraft.
+09-27 15:07:24.667 I/Sentry  ( 8728): SOUND bound/full level_default
+09-27 15:07:37.647 I/Sentry  ( 8728): ALERT[live] 15:07:37 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO22 Cessna · SW 2.5 mi · 0 kt · ≈700 above, level · Not closing S=7.73
+09-27 15:07:37.680 I/Sentry  ( 8728): SOUND advisory/short level_default · alert latency 0.2 s (ADVISORY a00001)
+09-27 15:07:51.656 I/Sentry  ( 8728): ALERT[live] 15:07:51 CAUTION TRAFFIC/ESCALATION sound=caution/full banner=POPUP: ◆ CAUTION · DEMO22 · SW 4,900 ft · 0 kt · ≈700 above, level · Not closing S=2.81
+09-27 15:07:51.682 I/Sentry  ( 8728): SOUND caution/full level_default · alert latency 0.1 s (CAUTION a00001)
+09-27 15:08:05.668 I/Sentry  ( 8728): ALERT[live] 15:08:05 ADVISORY TRAFFIC/ESCALATION sound=advisory/short banner=POPUP: △ ADVISORY · DEMO33 Helicopter · E 1.3 mi · 0 kt · ≈700 above, level · Not closing S=4.20
+09-27 15:08:05.679 I/Sentry  ( 8728): ALERT[live] 15:08:05 INFO TRACK_LOST/OTHER sound=- banner=CANCEL: ○ CLEAR · DEMO22 · Track lost · 
+09-27 15:08:05.687 I/Sentry  ( 8728): SOUND advisory/short level_default
+09-27 15:08:17.674 I/Sentry  ( 8728): ALERT[live] 15:08:17 ADVISORY TFR_ENTRY/OTHER sound=zone/full banner=POPUP: ▣ ENTERING TFR 9/9999 · DEMO33 · E 1.8 mi · 0 kt · ≈700 above, level · Not closing · Clear: move W S=4.20
+09-27 15:08:17.695 I/Sentry  ( 8728): SOUND zone/full level_default
+09-27 15:08:29.685 I/Sentry  ( 8728): ALERT[live] 15:08:29 INFO TRACK_LOST/OTHER sound=- banner=CANCEL: ○ CLEAR · DEMO33 · Track lost · 
+09-27 15:08:30.882 I/Sentry  ( 8728): DISARMED
+# replay, WARNING heads-up, our 'Got it' button tapped at (410,255) px
+09-27 15:05:30.892 I/Sentry  ( 8247): REPLAY start: Demo encounter: DEMO-1 vs N388KM at 1.0x
+09-27 15:05:30.896 I/Sentry  ( 8247): ALERT[replay] 11:51:50 PDT INFO SELECTION/OTHER sound=bound/full banner=POPUP: Watching DEMO-1 Pilot, this controller's aircraft.
+09-27 15:05:30.912 I/Sentry  ( 8247): SOUND bound/full level_default
+09-27 15:05:54.918 I/Sentry  ( 8247): ALERT[replay] 11:52:14 PDT TRACK ALERT TRAFFIC/ESCALATION sound=track/full banner=POPUP: ▲ TRACK · N388KM Cirrus · SW 3.9 mi · 163 kt · ≈600 above · Passing within 1.0 mi in 1 min 19 s · Clear: move NW S=11.82
+09-27 15:05:54.931 I/Sentry  ( 8247): SOUND track/full level_default · alert latency 0.1 s (TRACK ALERT a479ef)
+09-27 15:06:24.941 I/Sentry  ( 8247): ALERT[replay] 11:52:44 PDT TRACK ALERT TRAFFIC/UPDATE sound=- banner=SILENT: ▲ TRACK · N388KM Cirrus · SW 2.5 mi · 160 kt · ≈same alt · Passing within 0.9 mi in 50 s · Clear: move NW S=7.65
+09-27 15:06:37.950 I/Sentry  ( 8247): ALERT[replay] 11:52:57 PDT WARNING TRAFFIC/ESCALATION sound=warning/full banner=POPUP: ⚠ WARNING · N388KM · SW 1.9 mi · 155 kt · ≈100 below · Closest 2,700 ft in 40 s · Clear: move NW S=5.88
+09-27 15:06:37.972 I/Sentry  ( 8247): SOUND warning/full level_default · alert latency 0.3 s (WARNING a479ef)
+09-27 15:06:39.196 I/Sentry  ( 8247): ACTION Got it: N388KM repeats muted 60 s
+09-27 15:06:43.956 I/Sentry  ( 8247): ACTION Sounds back for N388KM: turning toward the drone
+09-27 15:06:43.957 I/Sentry  ( 8247): ALERT[replay] 11:53:03 PDT WARNING TRAFFIC/REPEAT sound=warning/short banner=SILENT: ⚠ WARNING · N388KM · SW 1.6 mi · 156 kt · ≈100 below · Closest 1,700 ft in 29 s · Clear: move NW S=4.90
+09-27 15:06:43.979 I/Sentry  ( 8247): SOUND warning/short level_default

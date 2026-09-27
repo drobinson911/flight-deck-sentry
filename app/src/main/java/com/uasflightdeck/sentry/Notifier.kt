@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.uasflightdeck.sentry.core.BannerLook
 import com.uasflightdeck.sentry.core.BannerRefresh
 import com.uasflightdeck.sentry.core.BannerText
 import com.uasflightdeck.sentry.core.OutputPlanner.BannerAction
@@ -23,6 +24,8 @@ import com.uasflightdeck.sentry.core.Tier
  *  - "traffic" (HIGH): one heads-up banner per aircraft, updated in place, never stacked. It pops up only on an
  *    escalation or a zone entry; cadence repeats update it silently; the countdown is refreshed every second in
  *    place. Actions: Got it · Ignore · Quiet 5 min (none on COLLISION RISK). Body tap = expand only.
+ *    0.4.4: fully custom RemoteViews on our own opaque dark card with explicit colours ([BannerLook]); the heads-up
+ *    is two rows + our action row, the expanded form the full four lines + actions.
  *  - "housekeeping" (HIGH): internet lost / regained, bound aircraft acquired / lost, pre-flight, sounds on.
  *    Tap = dismiss.
  *  - "status" (LOW): the foreground-service notification with Disarm and Open Sentry (the only way into the app).
@@ -117,54 +120,84 @@ class Notifier(private val ctx: Context) {
     fun trafficId(hex: String) = 1000 + (hex.hashCode() and 0x7FFF)
     private fun houseId(key: String) = 40_000 + (key.hashCode() and 0x3FFF)
 
-    /** Track amber, warning red, collision risk red (with "‼"), passing / clear grey. */
-    private fun colorFor(tier: Tier?, title: String) = ContextCompat.getColor(ctx, when {
-        title.startsWith("●") || title.startsWith("○") -> R.color.banner_grey
-        tier == Tier.COLLISION || tier == Tier.WARNING -> R.color.banner_red
-        tier == Tier.TRACK || tier == Tier.CAUTION -> R.color.banner_amber
-        tier == Tier.ADVISORY -> R.color.banner_blue
-        else -> R.color.banner_amber
-    })
+    /** 0.4.4 level colours (explicit, >= 7:1 on the card): collision red, warning amber, caution yellow, track /
+     *  advisory grey-blue, passing / clear grey. */
+    private fun level(tier: Tier?, title: String) = BannerLook.level(tier, title)
 
-    private fun views(layout: Int, b: BannerText, tier: Tier?): android.widget.RemoteViews {
+    /** The action buttons' intents; null = no action row (COLLISION RISK, PASSING, CLEAR). */
+    private class Actions(val gotIt: PendingIntent, val ignore: PendingIntent?, val quiet: PendingIntent, val quietLabel: String)
+
+    /**
+     * One of our three banner layouts, every colour explicit (0.4.2/0.4.3 used the platform notification text
+     * appearance, which is black unless the system is in night mode: unreadable on the RC Plus's dark heads-up).
+     */
+    private fun views(layout: Int, b: BannerText, tier: Tier?, actions: Actions?): android.widget.RemoteViews {
         val rv = android.widget.RemoteViews(ctx.packageName, layout)
+        val lv = level(tier, b.title)
+        rv.setInt(R.id.bStripe, "setBackgroundColor", lv.stripe)
         rv.setTextViewText(R.id.bTitle, b.title)
-        rv.setTextColor(R.id.bTitle, colorFor(tier, b.title))
-        rv.setTextViewText(R.id.bLine2, b.line2)
-        if (layout != R.layout.banner_2line) {
-            rv.setTextViewText(R.id.bLine3, b.line3)
-            rv.setViewVisibility(R.id.bLine3, if (b.line3.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
-            rv.setTextViewText(R.id.bLine4, b.line4 ?: "")
-            rv.setViewVisibility(R.id.bLine4, if (b.line4.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+        rv.setTextColor(R.id.bTitle, lv.argb)
+        rv.setTextColor(R.id.bLine2, BannerLook.INK)
+        if (layout == R.layout.banner_2line) {
+            rv.setTextViewText(R.id.bLine2, b.line2)
+            return rv
+        }
+        val lines = if (layout == R.layout.banner_headsup) BannerLook.headsUpRows(b).let { h -> Triple(h.where, h.what, h.hint) }
+                    else Triple(b.line2, b.line3, b.line4)
+        rv.setTextViewText(R.id.bLine2, lines.first)
+        rv.setTextViewText(R.id.bLine3, lines.second)
+        rv.setTextColor(R.id.bLine3, BannerLook.INK)
+        rv.setViewVisibility(R.id.bLine3, if (lines.second.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+        rv.setTextViewText(R.id.bLine4, lines.third ?: "")
+        rv.setTextColor(R.id.bLine4, BannerLook.INK)
+        rv.setViewVisibility(R.id.bLine4, if (lines.third.isNullOrEmpty()) android.view.View.GONE else android.view.View.VISIBLE)
+        if (actions == null) {
+            rv.setViewVisibility(R.id.bActions, android.view.View.GONE)
+        } else {
+            rv.setViewVisibility(R.id.bActions, android.view.View.VISIBLE)
+            for (id in intArrayOf(R.id.bGotIt, R.id.bIgnore, R.id.bQuiet)) rv.setTextColor(id, BannerLook.INK)
+            rv.setOnClickPendingIntent(R.id.bGotIt, actions.gotIt)
+            if (actions.ignore != null) rv.setOnClickPendingIntent(R.id.bIgnore, actions.ignore)
+            rv.setViewVisibility(R.id.bIgnore, if (actions.ignore != null) android.view.View.VISIBLE else android.view.View.GONE)
+            rv.setTextViewText(R.id.bQuiet, actions.quietLabel)
+            rv.setOnClickPendingIntent(R.id.bQuiet, actions.quiet)
         }
         return rv
     }
 
     private fun trafficNotification(hex: String, id: String, b: BannerText, tier: Tier?, alert: Boolean, silent: Boolean): Notification {
+        val active = tier != null && tier >= Tier.ADVISORY && !b.title.startsWith("●") && !b.title.startsWith("○")
+        val actions = if (active && tier != Tier.COLLISION) {
+            val code = trafficId(hex) * 4
+            Actions(
+                gotIt = serviceAction(ctx, SentryService.ACTION_GOT_IT, code) { it.putExtra("hex", hex).putExtra("id", id) },
+                ignore = if (ignoreEnabled) serviceAction(ctx, SentryService.ACTION_IGNORE, code + 1) { it.putExtra("hex", hex).putExtra("id", id) } else null,
+                quiet = serviceAction(ctx, SentryService.ACTION_QUIET, code + 2),
+                quietLabel = "Quiet $quietMin min")
+        } else null
         val nb = NotificationCompat.Builder(ctx, CH_TRAFFIC)
             .setSmallIcon(R.drawable.ic_stat_sentry)
-            .setColor(colorFor(tier, b.title))
+            .setColor(level(tier, b.title).stripe)
             .setContentTitle(b.title)
             .setContentText(b.line2)
-            // Fixed four lines (title, where, prediction, hint) on the heads-up and when expanded; the system adds the
-            // app header and the action buttons around it. Body tap = expand only (no content intent).
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(views(R.layout.banner_2line, b, tier))
-            .setCustomBigContentView(views(R.layout.banner_4line, b, tier))
-            // With the action row the heads-up has ~58 dp of text: three rows. COLLISION RISK has no actions: four lines.
-            .setCustomHeadsUpContentView(views(if (tier == Tier.COLLISION) R.layout.banner_4line else R.layout.banner_headsup, b, tier))
+            // 0.4.4: NO DecoratedCustomViewStyle. Our three layouts are the whole banner (own dark card, own colours,
+            // own buttons), so the system's notification theme and action row never decide what the pilot can read.
+            // Body tap = expand only (no content intent).
+            .setCustomContentView(views(R.layout.banner_2line, b, tier, null))
+            .setCustomBigContentView(views(R.layout.banner_4line, b, tier, actions))
+            .setCustomHeadsUpContentView(views(R.layout.banner_headsup, b, tier, actions))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(if (tier != null && tier >= Tier.WARNING) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
             .setShowWhen(false)
             .setOnlyAlertOnce(!alert)
             .setSilent(silent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-        val active = tier != null && tier >= Tier.ADVISORY && !b.title.startsWith("●") && !b.title.startsWith("○")
-        if (active && tier != Tier.COLLISION) {
-            val code = trafficId(hex) * 4
-            nb.addAction(0, "Got it", serviceAction(ctx, SentryService.ACTION_GOT_IT, code) { it.putExtra("hex", hex).putExtra("id", id) })
-            if (ignoreEnabled) nb.addAction(0, "Ignore", serviceAction(ctx, SentryService.ACTION_IGNORE, code + 1) { it.putExtra("hex", hex).putExtra("id", id) })
-            nb.addAction(0, "Quiet $quietMin min", serviceAction(ctx, SentryService.ACTION_QUIET, code + 2))
+        // The same actions as notification actions too: not drawn with fully custom views, but they stay available to
+        // accessibility services and any surface that shows the standard template.
+        actions?.let { a ->
+            nb.addAction(0, "Got it", a.gotIt)
+            a.ignore?.let { nb.addAction(0, "Ignore", it) }
+            nb.addAction(0, a.quietLabel, a.quiet)
         }
         return nb.build()
     }

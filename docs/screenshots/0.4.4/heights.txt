@@ -1,0 +1,42 @@
+Sentry banner heights on the emulated RC Plus (AVD rc-plus-29, 1920x1200 @ 400 dpi = density 2.5, Android 10).
+Source: `adb shell dumpsys activity service com.android.systemui/.SystemUIService`, taken while the banner was
+on screen; the traffic row's `contentHeight` in px (visibleType 2 = heads-up, 1 = expanded in the pulled-down shade).
+dp = px / 2.5. Heads-up width 1340 px = 536 dp (HeadsUpManagerPhone mTouchableRegion x 290..1630).
+
+BEFORE (0.4.3, DecoratedCustomViewStyle, 3 text rows + system action row):
+  WARNING heads-up, dark  : 332 px = 132.8 dp (visibleType 2)
+  TRACK heads-up, dark    : 332 px = 132.8 dp (visibleType 2)
+  WARNING / TRACK heads-up, light: 332 px = 132.8 dp (same run script; mTouchableRegion (290,0,1630,412) incl. the 80 px status bar)
+
+AFTER (0.4.4, own layouts, 2 text rows + own action row):
+  advisory  headsup  light: 239 px =  95.6 dp (visibleType 2)
+  advisory  headsup  dark : 239 px =  95.6 dp (visibleType 2)
+  advisory  expanded light: 325 px = 130.0 dp (visibleType 1)
+  advisory  expanded dark : 325 px = 130.0 dp (visibleType 1)
+  caution   headsup  light: 239 px =  95.6 dp (visibleType 2)
+  caution   headsup  dark : 239 px =  95.6 dp (visibleType 2)
+  caution   expanded light: 325 px = 130.0 dp (visibleType 1)
+  caution   expanded dark : 325 px = 130.0 dp (visibleType 1)
+  zone      headsup  light: 239 px =  95.6 dp (visibleType 2)
+  zone      headsup  dark : 239 px =  95.6 dp (visibleType 2)
+  zone      expanded light: 377 px = 150.8 dp (visibleType 1)
+  zone      expanded dark : 377 px = 150.8 dp (visibleType 1)
+  track     headsup  light: 239 px =  95.6 dp (visibleType 2)
+  track     headsup  dark : 239 px =  95.6 dp (visibleType 2)
+  track     expanded light: 377 px = 150.8 dp (visibleType 1)
+  track     expanded dark : 377 px = 150.8 dp (visibleType 1)
+  warning   headsup  light: 239 px =  95.6 dp (visibleType 2)
+  warning   headsup  dark : 239 px =  95.6 dp (visibleType 2)
+  warning   expanded light: 377 px = 150.8 dp (visibleType 1)
+  warning   expanded dark : 377 px = 150.8 dp (visibleType 1)
+  passing   headsup  light: 131 px =  52.4 dp (visibleType 2)
+  passing   headsup  dark : 131 px =  52.4 dp (visibleType 2)
+  passing   expanded light: 202 px =  80.8 dp (visibleType 1)
+  passing   expanded dark : 202 px =  80.8 dp (visibleType 1)
+  collision headsup  light: 131 px =  52.4 dp (visibleType 2)
+  collision headsup  dark : 131 px =  52.4 dp (visibleType 2)
+  collision expanded light: 254 px = 101.6 dp (visibleType 1)
+  collision expanded dark : 254 px = 101.6 dp (visibleType 1)
+
+Notes: PASSING and COLLISION RISK have no action row (52.4 dp heads-up). The expanded ADVISORY / CAUTION banners
+have no hint line (not closing), so they are shorter than TRACK / WARNING / zone entry.

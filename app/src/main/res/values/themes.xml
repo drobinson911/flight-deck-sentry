@@ -55,4 +55,24 @@
         <item name="colorPrimary">@color/advisory</item>
         <item name="colorAccent">@color/advisory</item>
     </style>
+    <!-- 0.4.4 banner (RemoteViews) text: explicit colours only, never ?android:attr/textColor* or the
+         platform's TextAppearance.*.Notification (black unless the system is in night mode). -->
+    <style name="Sentry.BannerText" parent="">
+        <item name="android:textColor">@color/banner_ink</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+    <style name="Sentry.BannerButton" parent="">
+        <item name="android:textColor">@color/banner_ink</item>
+        <item name="android:background">@drawable/banner_button</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:clickable">true</item>
+    </style>
 </resources>

@@ -1,19 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The traffic banner's fixed four-line shape (v0.4.0). BigTextStyle can't be used for the heads-up: Android
-  collapses its newlines into one line there. Used for the heads-up and the expanded form; banner_2line.xml
-  (title + where) is the collapsed form in the shade.
+  0.4.4 expanded (pulled-down) form of the traffic banner: the fixed four lines (title, where, prediction, hint)
+  + our own action row, on our own opaque dark card. Every colour is explicit (no system notification theme).
+  banner_2line.xml is the collapsed form in the shade, banner_headsup.xml the compact heads-up.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical">
-    <TextView android:id="@+id/bTitle" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Compat.Notification.Title" android:textStyle="bold" android:textSize="17sp" android:maxLines="1" />
-    <TextView android:id="@+id/bLine2" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:maxLines="1" />
-    <TextView android:id="@+id/bLine3" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:textStyle="bold" android:maxLines="1" />
-    <TextView android:id="@+id/bLine4" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Compat.Notification.Line2" android:textSize="15sp" android:maxLines="1" />
+    android:orientation="horizontal"
+    android:background="@drawable/banner_bg">
+    <ImageView android:id="@+id/bStripe" android:layout_width="5dp" android:layout_height="match_parent"
+        android:importantForAccessibility="no" />
+    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingStart="10dp" android:paddingEnd="10dp"
+        android:paddingTop="9dp" android:paddingBottom="9dp">
+        <TextView android:id="@+id/bTitle" style="@style/Sentry.BannerText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="17sp" android:textStyle="bold" />
+        <TextView android:id="@+id/bLine2" style="@style/Sentry.BannerText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="15sp" android:layout_marginTop="4dp" />
+        <TextView android:id="@+id/bLine3" style="@style/Sentry.BannerText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="15sp" android:textStyle="bold" android:layout_marginTop="3dp" />
+        <TextView android:id="@+id/bLine4" style="@style/Sentry.BannerText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:textSize="15sp" android:textStyle="bold" android:layout_marginTop="3dp" />
+        <LinearLayout android:id="@+id/bActions" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:layout_marginTop="9dp">
+            <TextView android:id="@+id/bGotIt" style="@style/Sentry.BannerButton" android:layout_width="wrap_content"
+                android:layout_height="40dp" android:text="Got it" />
+            <TextView android:id="@+id/bIgnore" style="@style/Sentry.BannerButton" android:layout_width="wrap_content"
+                android:layout_height="40dp" android:layout_marginStart="10dp" android:text="Ignore" />
+            <TextView android:id="@+id/bQuiet" style="@style/Sentry.BannerButton" android:layout_width="wrap_content"
+                android:layout_height="40dp" android:layout_marginStart="10dp" android:text="Quiet 5 min" />
+        </LinearLayout>
+    </LinearLayout>
 </LinearLayout>

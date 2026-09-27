@@ -151,9 +151,10 @@ before closest approach, and no missed true conflict. The owner's first plan (18
   "mi" is the pilot's miles, i.e. **nautical** miles (as ATC says "traffic, 3 miles"); under 1 mi distances are in
   feet. The hint is perpendicular to *his* track on the side the drone is already offset to (centred: away from his
   turn, else right), with ↑ / ↓ only when he is changing altitude toward the drone (below and climbing / crossing →
-  ↑; above and descending → ↓). It never says more than "Clear:". On the heads-up the hint sits on the prediction's
-  row (Android 10 gives a heads-up about 58 dp of text); expanded, each line is its own.
-  Colours: track amber, warning and collision risk red, passing / clear grey. The countdown updates every second in
+  ↑; above and descending → ↓). It never says more than "Clear:". The heads-up (0.4.4) is compact: row 1 = level + who + where,
+  row 2 = the prediction with the hint on the right, then the buttons (about 96 dp in all); expanded, each line is its
+  own. Every banner is its own dark card with explicit colours, readable whatever the system theme: collision risk
+  red, warning amber, caution yellow, track / advisory grey-blue, passing / clear grey, text near-white. The countdown updates every second in
   place. It **pops up only on an escalation or a zone entry**; repeats update it silently. It clears itself after
   the **banner duration** (5 s, setting 2–30 s; each cadence refresh restarts it) and at once when the aircraft clears.
 - **Banner actions:** **Got it** (that aircraft's repeats muted 60 s), **Ignore** (muted until it clears the rings;
