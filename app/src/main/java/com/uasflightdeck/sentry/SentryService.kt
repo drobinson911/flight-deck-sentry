@@ -434,16 +434,17 @@ class SentryService : Service() {
         val enabled = settings.stationEnabled
         health.setEnabled("station", enabled, System.currentTimeMillis())
         if (!enabled) { stationTargets = emptyList(); return }
-        val cands = listOfNotNull(Settings.normalizeStationBase(settings.stationUrl), discoveredStation).distinct()
+        val cands = StationCandidates.order(settings.stationUrl, discoveredStation, stationBaseInUse)
         if (cands.isEmpty()) throw IllegalStateException("no Overwatch station address (type one or wait for beacon)")
         var last: Exception? = null
         for (b in cands) {
             try {
                 val t0 = System.currentTimeMillis()
                 val text = http.get("$b/data/aircraft.json")
+                if (!StationCandidates.isReadsbShaped(text)) throw java.io.IOException("$b: not a readsb aircraft.json")
                 val now = System.currentTimeMillis()
                 stationTargets = Parsers.parseReadsb(text, now, "station")
-                health.ok("station", now, "${stationTargets.size} ac · ${now - t0} ms")
+                health.ok("station", now, "${stationTargets.size} ac · ${now - t0} ms · ${StationCandidates.label(b)}")
                 if (stationBaseInUse != b) { stationBaseInUse = b; SentryBus.log("Overwatch station link: using $b") }
                 return
             } catch (e: Exception) { last = e }

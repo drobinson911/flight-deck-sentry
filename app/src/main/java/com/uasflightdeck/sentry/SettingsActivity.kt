@@ -307,9 +307,10 @@ class SettingsActivity : AppCompatActivity() {
 
         section(right, "Overwatch ADS-B station (URL)").apply {
             addView(note("The local feed: an Overwatch station's /data/aircraft.json (readsb-shaped) over Wi-Fi. Without it, " +
-                "all traffic comes from the online feed."))
+                "all traffic comes from the online feed. A bare IP works for both a Pi Overwatch (port 8080) and a Micro Bar (port 80); " +
+                "type a port only to force one."))
             val st = switch("Use the Overwatch station", s.stationEnabled)
-            val url = field("Overwatch station URL", s.stationUrl, hint = "192.168.1.20 or http://host:8080")
+            val url = field("Overwatch station URL", s.stationUrl, hint = "192.168.1.20 (Pi or Micro Bar) or http://host:8080")
             val auto = switch("Auto-discover the Overwatch station (LAN beacon)", s.stationAutoDiscover)
             savers += { s.stationEnabled = st.isChecked; s.stationUrl = url.text.toString().trim(); s.stationAutoDiscover = auto.isChecked }
         }
