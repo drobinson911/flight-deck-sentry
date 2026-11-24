@@ -188,12 +188,11 @@ class MainActivity : AppCompatActivity() {
                 it.putExtra("hex", i.getStringExtra("hex")); it.putExtra("id", i.getStringExtra("id"))
             }
             "quiet" -> SentryService.send(this, SentryService.ACTION_QUIET)
-            // --es station_url http://10.0.2.2:18080 --ez station true
+            // --es station_url http://10.0.2.2:18080
             // --es pinned 1581F7K3C251F00C9B34 --es worker http://10.0.2.2:18081
             // --ef elev 5100 (controller elevation override; NaN clears it)
             "set" -> {
                 i.getStringExtra("station_url")?.let { settings.stationUrl = it }
-                if (i.hasExtra("station")) settings.stationEnabled = i.getBooleanExtra("station", false)
                 i.getStringExtra("pinned")?.let { settings.pinnedSerial = it }
                 i.getStringExtra("worker")?.let { settings.workerBase = it }
                 if (i.hasExtra("elev")) settings.controllerElevFt = i.getFloatExtra("elev", Float.NaN).toDouble()
@@ -356,6 +355,7 @@ class MainActivity : AppCompatActivity() {
                 HealthMonitor.State.LOST -> "LOST   " to R.color.warning
                 HealthMonitor.State.WAITING -> "WAIT   " to R.color.caution
                 HealthMonitor.State.DISABLED -> "OFF    " to R.color.dim
+                HealthMonitor.State.IDLE -> "NONE   " to R.color.dim
             }
             // A name longer than the 14-character column ("Overwatch station") gets its own line.
             if (r.name.length > 14) sb.add(r.name + "\n" + " ".repeat(14), col(R.color.ink)) else sb.add(r.name.padEnd(14), col(R.color.ink))

@@ -139,6 +139,8 @@ class SentryService : Service() {
     // ── live data (immutable snapshots swapped atomically) ─────────────────
     @Volatile private var fdaDrones: List<Ownship> = emptyList()
     @Volatile private var dsDrones: List<Ownship> = emptyList()
+    /** Remote ID drones the Overwatch box on this Wi-Fi hears: candidates for the pinned airframe, never traffic. */
+    @Volatile private var stationDrones: List<Ownship> = emptyList()
     @Volatile private var airsense: List<Target> = emptyList()
     @Volatile private var stationTargets: List<Target> = emptyList()
     @Volatile private var cloudTargets: List<Target> = emptyList()
@@ -378,9 +380,7 @@ class SentryService : Service() {
                     SentryBus.log("Watchdog: restarting tick loop")
                     startTickLoop()
                 }
-                if (settings.stationEnabled && settings.stationAutoDiscover) {
-                    if (beaconJob?.isActive != true) startBeacon()
-                } else { beaconJob?.cancel(); beaconJob = null }
+                if (beaconJob?.isActive != true) startBeacon()   // always: any Overwatch box on this Wi-Fi is used
                 acquireWakeLock()
                 Updater.check(this@SentryService)   // no-op unless 24 h since the last good check (1 h after a failure)
             }
@@ -430,12 +430,15 @@ class SentryService : Service() {
         health.ok("fleet", System.currentTimeMillis(), st.detail)
     }
 
+    /**
+     * The Overwatch box on this Wi-Fi, any model (Pi, Mini, Micro): always on, no switch. Until a box is heard
+     * (beacon) or typed the link is IDLE: shown as NONE, never spoken. Once one has answered it stays a
+     * candidate, so a box that stops is announced ("lost").
+     */
     private suspend fun pollStation() {
-        val enabled = settings.stationEnabled
-        health.setEnabled("station", enabled, System.currentTimeMillis())
-        if (!enabled) { stationTargets = emptyList(); return }
         val cands = StationCandidates.order(settings.stationUrl, discoveredStation, stationBaseInUse)
-        if (cands.isEmpty()) throw IllegalStateException("no Overwatch station address (type one or wait for beacon)")
+        health.setIdle("station", cands.isEmpty(), System.currentTimeMillis(), "no Overwatch box on this Wi-Fi yet (listening)")
+        if (cands.isEmpty()) { stationTargets = emptyList(); stationDrones = emptyList(); return }
         var last: Exception? = null
         for (b in cands) {
             try {
@@ -444,7 +447,9 @@ class SentryService : Service() {
                 if (!StationCandidates.isReadsbShaped(text)) throw java.io.IOException("$b: not a readsb aircraft.json")
                 val now = System.currentTimeMillis()
                 stationTargets = Parsers.parseReadsb(text, now, "station")
-                health.ok("station", now, "${stationTargets.size} ac · ${now - t0} ms · ${StationCandidates.label(b)}")
+                stationDrones = Parsers.parseStationDrones(text, now)
+                val rid = if (stationDrones.isEmpty()) "" else " + ${stationDrones.size} RID"
+                health.ok("station", now, "${stationTargets.size} ac$rid · ${now - t0} ms · ${StationCandidates.label(b)}")
                 if (stationBaseInUse != b) { stationBaseInUse = b; SentryBus.log("Overwatch station link: using $b") }
                 return
             } catch (e: Exception) { last = e }
@@ -464,13 +469,24 @@ class SentryService : Service() {
         health.ok("cloud", now, "${cloudTargets.size} near / ${all.size} US")
     }
 
+    /** The online list first; with no internet, the Overwatch box's own copy (/tfrs.json, every model). */
     private suspend fun pollTfrs() {
-        val text = http.get(base() + "/api/tfrs")
-        val zones = Parsers.parseTfrs(text)
-        if (zones.isEmpty()) throw IllegalStateException("TFR feed parsed empty")
+        val online = runCatching {
+            val text = http.get(base() + "/api/tfrs")
+            Parsers.parseTfrs(text).also {
+                if (it.isEmpty()) throw IllegalStateException("TFR feed parsed empty")
+                runCatching { File(filesDir, "tfrs.json").writeText(text) }
+            }
+        }
+        val zones = online.getOrNull() ?: stationTfrs() ?: throw online.exceptionOrNull()!!
         tfrZones = zones
-        runCatching { File(filesDir, "tfrs.json").writeText(text) }
-        health.ok("tfr", System.currentTimeMillis(), "${zones.size} TFRs")
+        health.ok("tfr", System.currentTimeMillis(), "${zones.size} TFRs" + if (online.isSuccess) "" else " (Overwatch box)")
+    }
+
+    /** The TFRs the Overwatch box in use holds, or null (no box, or it has none). */
+    private suspend fun stationTfrs(): List<Zone>? {
+        val b = stationBaseInUse ?: return null
+        return runCatching { Parsers.parseStationTfrs(http.get("$b/tfrs.json")) }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 
     private fun loadTfrCache() {
@@ -509,7 +525,7 @@ class SentryService : Service() {
         // Settings auto-saves while the pilot types (0.3.4); log every change of the binding so it can be verified.
         val bound = DroneSelector.normaliseSerial(selector.config.pinnedSerial)
         if (bound != loggedBound) { loggedBound = bound; SentryBus.log("Selection: bound to ${bound ?: "nothing (controller only)"}") }
-        val sel = selector.step(now, fdaDrones + dsDrones, controllerFix())
+        val sel = selector.step(now, fdaDrones + dsDrones + stationDrones, controllerFix())
         val own = sel.ownship
         if (own != null) lastOwnPos = own.pos
         val center = own?.pos ?: lastOwnPos
@@ -582,7 +598,7 @@ class SentryService : Service() {
 
     private fun trafficAgeSec(now: Long): Double {
         val ages = listOfNotNull(
-            if (settings.stationEnabled) health.ageSec("station", now) else null,
+            health.ageSec("station", now),
             if (settings.cloudEnabled) health.ageSec("cloud", now) else null,
         )
         return ages.minOrNull() ?: ((now - armedAtMs) / 1000.0)
@@ -707,8 +723,8 @@ class SentryService : Service() {
         else -> com.uasflightdeck.sentry.core.Housekeeping.text(ev.kind, ev.text, stationLive()) ?: ("Sentry" to ev.text)
     }
 
-    /** The Overwatch station link is enabled and healthy right now (named in "Internet offline" only then). */
-    private fun stationLive(): Boolean = settings.stationEnabled &&
+    /** The Overwatch station link is healthy right now (named in "Internet offline" only then). */
+    private fun stationLive(): Boolean =
         health.get("station")?.let { health.stateOf(it, System.currentTimeMillis()) == HealthMonitor.State.OK } == true
 
     /** A pilot action (banner button) or a mute ending: log + "Last alerts", and the status line picks it up. */
@@ -747,13 +763,13 @@ class SentryService : Service() {
                 val feed = FleetStatus.of(token.isBlank(),
                     FleetStatus.Fetch(fda?.getOrNull()?.size, fda?.exceptionOrNull()?.let { err(it) }),
                     FleetStatus.Fetch(ds?.getOrNull()?.size, ds?.exceptionOrNull()?.let { err(it) }))
-                val drones = ds?.getOrNull().orEmpty() + fda?.getOrNull().orEmpty()
+                val drones = ds?.getOrNull().orEmpty() + fda?.getOrNull().orEmpty() + stationDrones
                 val pinned = DroneSelector.normaliseSerial(settings.pinnedSerial)
                 val bound = drones.filter { DroneSelector.normaliseSerial(it.serial) == pinned }.maxByOrNull { it.posTimeMs }
                 val adsb = runCatching { Parsers.parseReadsb(http.get(base() + "/api/live/adsb"), System.currentTimeMillis(), "cloud") }
                 val center = bound?.pos ?: controllerFix()?.pos ?: lastOwnPos
                 val near = adsb.getOrNull()?.let { all -> center?.let { TrafficMerger.within(all, it, settings.trafficRadiusNm).size } }
-                val stationOk = settings.stationEnabled && health.get("station")?.let { health.stateOf(it, System.currentTimeMillis()) == HealthMonitor.State.OK } == true
+                val stationOk = health.get("station")?.let { health.stateOf(it, System.currentTimeMillis()) == HealthMonitor.State.OK } == true
                 val tfr = if (tfrZones.isNotEmpty()) Result.success(tfrZones.size) else runCatching { Parsers.parseTfrs(http.get(base() + "/api/tfrs")).also { tfrZones = it }.size }
                 val fix = controllerFix()
                 val fixAge = fix?.let { (System.currentTimeMillis() - it.timeMs) / 1000.0 }

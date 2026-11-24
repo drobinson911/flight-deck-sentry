@@ -94,6 +94,49 @@ object Parsers {
         return out.values.toList()
     }
 
+    // ── Remote ID drones from the Overwatch box's own aircraft.json ──────
+    /**
+     * The `src:"rid"` rows [parseReadsb] leaves out, as candidates for THIS controller's aircraft (never as
+     * traffic): the box hears the drone's own Remote ID, so the pinned airframe is watched with no internet.
+     * Same row on every model (Pi tracks.py `odid`, Mini/Micro json_feeds.h readsbDr): the serial is
+     * `odid.ids.serial` (any other broadcast id as a fallback), `odid.height_ft` is above ground/takeoff.
+     * A row without a position or without any id is skipped (it can never match a pinned serial).
+     */
+    fun parseStationDrones(text: String, receivedAtMs: Long): List<Ownship> {
+        val root = parse(text).obj() ?: return emptyList()
+        val rows = root["aircraft"].arr() ?: root["ac"].arr() ?: return emptyList()
+        val out = LinkedHashMap<String, Ownship>()
+        for (el in rows) {
+            val a = el.obj() ?: continue
+            if (a.str("src") != "rid") continue
+            val odid = a["odid"].obj() ?: continue
+            val ids = odid["ids"].obj()
+            val serial = ids?.str("serial")?.trim()?.takeIf { it.isNotEmpty() }
+                ?: ids?.values?.firstNotNullOfOrNull { it.str()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                ?: continue
+            val lat = a.num("lat") ?: continue
+            val lon = a.num("lon") ?: continue
+            val callsign = a.str("flight")?.trim()?.takeIf { it.isNotEmpty() }
+            val seenPos = a.num("seen_pos") ?: a.num("seen") ?: 0.0
+            val o = Ownship(
+                id = "rid:$serial",
+                name = callsign ?: serial,
+                lat = lat, lon = lon,
+                altMslFt = a.num("alt_geom") ?: a.num("alt_baro"),
+                altAglFt = if (a.str("alt_baro") == "ground") 0.0 else odid.num("height_ft"),
+                posTimeMs = receivedAtMs - (seenPos * 1000).toLong(),
+                source = OwnshipSource.OVERWATCH_RID,
+                callsign = callsign,
+                serial = serial,
+                model = odid.str("ua_type"),
+                speedMs = a.num("gs")?.let { Units.ktToMs(it) },
+            )
+            val prev = out[serial]
+            if (prev == null || o.posTimeMs > prev.posTimeMs) out[serial] = o
+        }
+        return out.values.toList()
+    }
+
     // ── fleet: /api/live/our-drones (Flight Deck Air ingest shape) ───────
     data class FleetParse(val drones: List<Ownship>, val airsense: List<Target>)
 
@@ -216,6 +259,46 @@ object Parsers {
             uom.equals("FL", true) -> AltRef.MSL
             code.equals("HEI", true) -> AltRef.AGL
             code.equals("ALT", true) -> AltRef.MSL
+            else -> AltRef.UNKNOWN
+        }
+        return AltLimit(ft, ref)
+    }
+
+    // ── TFRs from the Overwatch box: /tfrs.json (no internet needed) ─────
+    /**
+     * The box's own copy of the TFR list, the same flat shape on every model (Pi sources/tfrs.py
+     * normalise_feature, Mini/Micro tfr.h stationJson): `{"features":[{id, notam, name, lower_ft, upper_ft,
+     * lower, upper, points:[[lat,lon],...]}]}`. Points are [lat, lon] (NOT GeoJSON's order). The labels
+     * ("SFC", "8,500 ft", "3,000 ft AGL", "FL180", "" = see NOTAM) carry the reference.
+     */
+    fun parseStationTfrs(text: String): List<Zone> {
+        val root = parse(text).obj() ?: return emptyList()
+        val out = ArrayList<Zone>()
+        root["features"].arr().orEmpty().forEachIndexed { i, fEl ->
+            val f = fEl.obj() ?: return@forEachIndexed
+            val ring = f["points"].arr().orEmpty().mapNotNull { pt ->
+                val c = pt.arr() ?: return@mapNotNull null
+                val lat = c.getOrNull(0).num() ?: return@mapNotNull null
+                val lon = c.getOrNull(1).num() ?: return@mapNotNull null
+                LatLon(lat, lon).takeIf { lat in -90.0..90.0 && lon in -180.0..180.0 }
+            }
+            if (ring.size < 3) return@forEachIndexed
+            val name = listOf("notam", "name", "id").firstNotNullOfOrNull { k -> f.str(k)?.trim()?.takeIf { it.isNotEmpty() } } ?: "TFR"
+            val floor = labelLimit(f.num("lower_ft"), f.str("lower")) ?: AltLimit.SURFACE
+            val ceil = labelLimit(f.num("upper_ft"), f.str("upper")) ?: AltLimit.UNKNOWN
+            out += Zone("tfr:$name:$i", name, ZoneKind.TFR, listOf(Polygon(ring)), floor, ceil)
+        }
+        return out
+    }
+
+    /** A box label -> its limit: "SFC" = the surface, "... AGL" = above ground, "FL..." / "... ft" = MSL. */
+    private fun labelLimit(ft: Double?, label: String?): AltLimit? {
+        val l = label?.trim()?.uppercase().orEmpty()
+        if (l == "SFC") return AltLimit.SURFACE
+        if (ft == null) return null
+        val ref = when {
+            l.endsWith("AGL") -> AltRef.AGL
+            l.startsWith("FL") || l.endsWith("FT") -> AltRef.MSL
             else -> AltRef.UNKNOWN
         }
         return AltLimit(ft, ref)

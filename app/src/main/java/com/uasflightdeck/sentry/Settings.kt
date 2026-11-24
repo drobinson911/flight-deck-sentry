@@ -30,9 +30,11 @@ class Settings(ctx: Context) {
     var workerBase by str("workerBase", "https://uas-app.drobinson911.workers.dev")
 
     // traffic
-    var stationEnabled by bool("stationEnabled", false)
+    /**
+     * Optional override: an Overwatch box address to try first. The box itself (any model) is always used,
+     * found by its LAN beacon; there is no on/off (0.4.6's stationEnabled / stationAutoDiscover are no longer read).
+     */
     var stationUrl by str("stationUrl", "")
-    var stationAutoDiscover by bool("stationAutoDiscover", true)
     var cloudEnabled by bool("cloudEnabled", true)
     var trafficRadiusNm by dbl("trafficRadiusNm", 30.0)
 

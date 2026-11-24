@@ -41,6 +41,18 @@ class PinnedSelectionTest {
         }
     }
 
+    @Test fun pinnedHeardOnlyByTheOverwatchBoxRemoteIdIsWatched() {
+        // No internet, no fleet feed: the box on this Wi-Fi hears the drone's own Remote ID (serial = airframe serial).
+        val rid = mine.copy(id = "rid:$PIN", source = OwnshipSource.OVERWATCH_RID)
+        val other = demo1.copy(id = "rid:OTHER1", source = OwnshipSource.OVERWATCH_RID)
+        val r = sel().at(0, other, rid)
+        assertEquals(SelectionMode.PINNED, r.mode)
+        assertEquals("rid:$PIN", r.ownship!!.id)
+        assertEquals(OwnshipSource.OVERWATCH_RID, r.ownship!!.source)
+        // Nothing pinned: a Remote ID drone the box hears is never protected in the controller's place.
+        assertEquals(SelectionMode.CONTROLLER, sel(pinned = "").at(0, other, rid).mode)
+    }
+
     @Test fun pinnedPresentOnThePadIsWatched() {
         val r = sel().at(0, demo1, mineOnPad)
         assertEquals(SelectionMode.PINNED, r.mode); assertEquals("m", r.drone!!.id)

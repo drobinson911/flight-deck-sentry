@@ -305,14 +305,12 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        section(right, "Overwatch ADS-B station (URL)").apply {
-            addView(note("The local feed: an Overwatch station's /data/aircraft.json (readsb-shaped) over Wi-Fi. Without it, " +
-                "all traffic comes from the online feed. A bare IP works for both a Pi Overwatch (port 8080) and a Micro Bar (port 80); " +
-                "type a port only to force one."))
-            val st = switch("Use the Overwatch station", s.stationEnabled)
-            val url = field("Overwatch station URL", s.stationUrl, hint = "192.168.1.20 (Pi or Micro Bar) or http://host:8080")
-            val auto = switch("Auto-discover the Overwatch station (LAN beacon)", s.stationAutoDiscover)
-            savers += { s.stationEnabled = st.isChecked; s.stationUrl = url.text.toString().trim(); s.stationAutoDiscover = auto.isChecked }
+        section(right, "Overwatch box (automatic)").apply {
+            addView(note("Any Overwatch box on this Wi-Fi (Overwatch, Overwatch Mini or Overwatch Micro) is found by itself and used: " +
+                "its aircraft, the Remote ID of this controller's drone and its TFRs, with or without the internet. " +
+                "Type an address only if a box is not found (a bare IP works for every model; type a port only to force one)."))
+            val url = field("Overwatch box address (optional)", s.stationUrl, hint = "192.168.1.20 or http://host:8080")
+            savers += { s.stationUrl = url.text.toString().trim() }
         }
 
         section(right, "Traffic sources (all run together)").apply {

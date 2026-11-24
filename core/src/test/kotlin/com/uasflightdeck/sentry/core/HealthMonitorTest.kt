@@ -29,6 +29,23 @@ class HealthMonitorTest {
         assertEquals(HealthMonitor.State.LOST, h.stateOf(h.get("station")!!, 10_001))
     }
 
+    @Test fun idleUntilABoxIsHeardIsSilentThenNormal() {
+        // No box heard or typed: the always-on station link is IDLE, never "not reachable".
+        val h = HealthMonitor()
+        h.register("station", SystemText.HEALTH_SOURCES.toMap().getValue("station"), 10.0)
+        h.setIdle("station", true, 0, "listening")
+        assertTrue(h.step(100_000).isEmpty())
+        assertEquals(HealthMonitor.State.IDLE, h.stateOf(h.get("station")!!, 100_000))
+        assertEquals("listening", h.get("station")!!.detail)
+        // A beacon arrives at 100 s: a fresh wait, the first success is quiet ...
+        h.setIdle("station", false, 100_000)
+        assertEquals(HealthMonitor.State.WAITING, h.stateOf(h.get("station")!!, 105_000))
+        h.ok("station", 106_000)
+        assertTrue(h.step(106_000).isEmpty())
+        // ... and a box that answered and then stopped is spoken.
+        assertEquals("Overwatch station link lost", h.step(116_001).single().text)
+    }
+
     @Test fun disabledIsSilent() {
         val h = HealthMonitor()
         h.register("cloud", "Cloud traffic", 20.0)

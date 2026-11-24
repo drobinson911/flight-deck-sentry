@@ -4,6 +4,8 @@ package com.uasflightdeck.sentry.core
 enum class OwnshipSource(val label: String) {
     FLEET_FDA("fleet feed (Flight Deck Air)"),
     FLEET_DRONESENSE("fleet feed (DroneSense)"),
+    /** The drone's own Remote ID, heard by the Overwatch box on this Wi-Fi (works with no internet). */
+    OVERWATCH_RID("Overwatch box (Remote ID)"),
     MANUAL_PINNED("manual position"),
     DEVICE_GPS("controller GPS"),
     REPLAY("replay"),

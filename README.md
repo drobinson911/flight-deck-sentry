@@ -186,7 +186,7 @@ failure, and the result as a housekeeping alert.
 ### Low power
 
 Bound aircraft on the pad or absent: cloud traffic and the drone feed every **5 s**; airborne: **2 s / 2 s**. The
-Overwatch station link stays 1 s when enabled. The rates in use are shown in Sources ("Polling").
+Overwatch box link stays 1 s. The rates in use are shown in Sources ("Polling").
 
 ### Alert latency
 
@@ -295,16 +295,19 @@ Owner: "make sure this software never impacts DroneSense on the controller while
 
 ## Data sources (all run at the same time, never either/or)
 
-The local feed is an **Overwatch ADS-B station**'s `/data/aircraft.json` (readsb-shaped) on the truck's Wi-Fi; without
-one, all traffic comes from the online feed (the worker's `/api/live/adsb`) plus the drone's own AirSense contacts.
+The local feed is any **Overwatch box** on this Wi-Fi (Overwatch, Overwatch Mini or Overwatch Micro: one protocol). It is
+always on, with no switch: the box is found by its UDP beacon (41120), a typed address is only an optional override, and
+until a box is heard the link shows NONE and is never spoken. Without one, all traffic comes from the online feed (the
+worker's `/api/live/adsb`) plus the drone's own AirSense contacts.
 
 | What | Where | Cadence |
 |---|---|---|
 | Drone position | `GET {worker}/api/live/our-drones` and `/api/live/dronesense` + `X-Fleet-Token` | 2 s airborne, 5 s on the pad / absent |
-| Traffic A: Overwatch ADS-B station (local) | `http://<station>:8080/data/aircraft.json` (readsb-shaped), typed URL and UDP beacon 41120 | 1 s |
+| Traffic A: Overwatch box (local) | `http://<box>:<beacon port>/data/aircraft.json` (readsb-shaped; Pi 8080, Mini/Micro 8080 or 80), UDP beacon 41120 or a typed address | 1 s |
+| Drone position, no internet | the same file's Remote ID rows (`src:"rid"`, serial `odid.ids.serial`): only the PINNED serial is ever watched, never as traffic | 1 s |
 | Traffic B: cloud | `GET {worker}/api/live/adsb` (browser User-Agent), filtered to 30 nm | 2 s airborne, 5 s on the pad / absent |
 | Traffic C: AirSense | the drone's own ADS-B contacts relayed in `our-drones` | with the drone feed |
-| TFRs | `GET {worker}/api/tfrs`, cached on disk | 10 min |
+| TFRs | `GET {worker}/api/tfrs`, cached on disk; with no internet the box's own `/tfrs.json` (flat, `points` [lat, lon]) | 10 min |
 | Geofences | Settings: circle + GeoJSON import | — |
 | Internet | ConnectivityManager + any worker response; probe `GET {worker}/` when quiet for 15 s | 15 s |
 

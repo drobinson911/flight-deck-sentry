@@ -130,4 +130,55 @@ class ParsersTest {
         assertFalse(TrafficMerger.within(listOf(a), LatLon(1.0, 1.0), 0.1).isEmpty())
         assertTrue(TrafficMerger.within(listOf(b), LatLon(1.0, 1.0), 30.0).isEmpty())
     }
+
+    // ── the Overwatch box's own Remote ID rows and TFR list (same shape on every model) ──
+    private val ridRows = """{"now":1790189600.0,"aircraft":[
+        {"hex":"A479EF","flight":"N388KM","lat":39.40,"lon":-120.05,"alt_baro":7460,"seen_pos":0.4,"src":"adsb"},
+        {"hex":"f1a2b3","type":"adsb_other","flight":"","category":"B6","lat":39.41,"lon":-120.04,"alt_baro":5390,
+         "alt_geom":5402,"gs":19.4,"seen":0.5,"seen_pos":1.5,"src":"rid","origin":"cube",
+         "odid":{"transport":"wifi-beacon","mac":"60:60:1f:aa:bb:cc","rssi":-71,"channel":null,"ua_type":"helicopter_or_multirotor",
+                 "ids":{"serial":"1581F7K3C251F00C9B34"},"status":"airborne","height_ft":180,"height_ref":"above takeoff"}},
+        {"hex":"f00002","flight":"SESSION","lat":39.42,"lon":-120.03,"alt_baro":"ground","seen_pos":0.2,"src":"rid",
+         "odid":{"ids":{"session_id":"ABC123"}}},
+        {"hex":"f00003","lat":null,"lon":null,"src":"rid","odid":{"ids":{"serial":"NOPOS"}}},
+        {"hex":"f00004","lat":39.4,"lon":-120.0,"src":"rid","odid":{"ids":{}}}
+      ],"ac":[]}"""
+
+    @Test fun boxRemoteIdRowsAreOwnshipCandidatesNotTraffic() {
+        val drones = Parsers.parseStationDrones(ridRows, now)
+        assertEquals(listOf("1581F7K3C251F00C9B34", "ABC123"), drones.map { it.serial })
+        val d = drones[0]
+        assertEquals(OwnshipSource.OVERWATCH_RID, d.source)
+        assertEquals("1581F7K3C251F00C9B34", d.name)          // no callsign: the serial names it
+        assertEquals(5402.0, d.altMslFt!!, 0.1)               // geometric first
+        assertEquals(180.0, d.altAglFt!!, 0.1)                // height above takeoff
+        assertEquals(now - 1500, d.posTimeMs)                 // seen_pos
+        assertEquals(19.4 * Units.MS_PER_KT, d.speedMs!!, 1e-6)
+        assertTrue(d.isAirborne)
+        assertEquals(0.0, drones[1].altAglFt!!, 0.0)          // ODID "ground" = on the pad
+        assertFalse(drones[1].isAirborne)
+        // ...and they are still never traffic.
+        assertEquals(listOf("a479ef"), Parsers.parseReadsb(ridRows, now, "station").map { it.hex })
+    }
+
+    @Test fun boxTfrListFlatShape() {
+        // Pi sources/tfrs.py normalise_feature == Mini/Micro tfr.h stationJson: points are [lat, lon].
+        val j = """{"count":3,"features":[
+          {"id":"6/2725","notam":"6/2725","name":"FIRE","lower_ft":0,"upper_ft":3000,"lower":"SFC","upper":"3,000 ft AGL",
+           "points":[[39.0,-120.0],[39.1,-120.0],[39.1,-120.1],[39.0,-120.1]]},
+          {"id":"BEALE AFB","notam":"","name":"BEALE AFB NDA","lower_ft":null,"upper_ft":18000,"lower":"","upper":"FL180",
+           "points":[[39.2,-121.4],[39.3,-121.4],[39.3,-121.5]]},
+          {"id":"BAD","points":[[39.0,-120.0],[95.0,-120.0]]}
+        ],"stale":false}"""
+        val z = Parsers.parseStationTfrs(j)
+        assertEquals(listOf("6/2725", "BEALE AFB NDA"), z.map { it.name })
+        assertEquals(ZoneKind.TFR, z[0].kind)
+        assertEquals(AltLimit.SURFACE, z[0].floor)
+        assertEquals(AltLimit(3000.0, AltRef.AGL), z[0].ceiling)
+        assertEquals(39.1, z[0].polygons[0].outer[1].lat, 0.0)   // lat first, not GeoJSON's lon first
+        assertEquals(AltLimit.SURFACE, z[1].floor)                // "" = not stated -> surface (as /api/tfrs)
+        assertEquals(AltLimit(18000.0, AltRef.MSL), z[1].ceiling)
+        assertTrue(Parsers.parseStationTfrs("""{"count":0,"features":[]}""").isEmpty())
+        assertTrue(Parsers.parseStationTfrs("""{"features":[{"points":"x"},7,null]}""").isEmpty())
+    }
 }

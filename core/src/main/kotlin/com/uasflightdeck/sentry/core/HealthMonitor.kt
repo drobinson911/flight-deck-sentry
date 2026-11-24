@@ -6,10 +6,12 @@ package com.uasflightdeck.sentry.core
  * last SUCCESS time at query time, never from the last event.
  */
 class HealthMonitor {
-    enum class State { WAITING, OK, LOST, DISABLED }
+    /** IDLE = on, but there is nothing to reach yet (no Overwatch box heard or typed): shown, never spoken. */
+    enum class State { WAITING, OK, LOST, DISABLED, IDLE }
 
     class Source(val key: String, val spoken: String, var lostAfterSec: Double) {
         var enabled = true
+        var idle = false
         var lastOkMs: Long? = null
         var enabledSinceMs: Long? = null
         var lastError: String? = null
@@ -33,6 +35,18 @@ class HealthMonitor {
         if (enabled && s.enabledSinceMs == null) s.enabledSinceMs = nowMs
     }
 
+    /**
+     * Idle (nothing to reach yet) or active again. Going idle forgets the link silently; leaving idle
+     * starts a fresh wait, so the first success is quiet and only a link that worked and then
+     * stopped is spoken ("lost"), exactly as after enabling.
+     */
+    fun setIdle(key: String, idle: Boolean, nowMs: Long, detail: String = "") {
+        val s = sources[key] ?: return
+        if (idle) { s.announcedState = State.IDLE; s.lastOkMs = null; s.lastError = null; s.detail = detail }
+        else if (s.idle) { s.enabledSinceMs = nowMs; s.announcedState = State.WAITING; s.lastOkMs = null }
+        s.idle = idle
+    }
+
     fun ok(key: String, nowMs: Long, detail: String = "") {
         val s = sources[key] ?: return
         s.lastOkMs = nowMs; s.lastError = null; s.detail = detail
@@ -44,6 +58,7 @@ class HealthMonitor {
 
     fun stateOf(s: Source, nowMs: Long): State {
         if (!s.enabled) return State.DISABLED
+        if (s.idle) return State.IDLE
         val ok = s.lastOkMs
         if (ok != null && (nowMs - ok) / 1000.0 <= s.lostAfterSec) return State.OK
         if (ok == null && nowMs - (s.enabledSinceMs ?: nowMs) < s.lostAfterSec * 1000) return State.WAITING
@@ -54,7 +69,7 @@ class HealthMonitor {
     fun step(nowMs: Long): List<AlertEvent> {
         val out = ArrayList<AlertEvent>()
         for (s in sources.values) {
-            if (!s.enabled) continue
+            if (!s.enabled || s.idle) continue
             val st = stateOf(s, nowMs)
             if (st == s.announcedState) continue
             when {
